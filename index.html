@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventario Picking Cloud - Pro Num</title>
+    <title>Inventario & Incidencias Cloud Pro</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
@@ -23,6 +23,7 @@
         const db = getDatabase(app);
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
+        const dbRefIncidencias = ref(db, 'incidencias_global');
 
         let inventarioMaestro = [];
 
@@ -30,9 +31,8 @@
             const data = snapshot.val();
             if (data) {
                 inventarioMaestro = Object.values(data);
-                document.getElementById('uploadText').innerText = "✅ SISTEMA CONECTADO Y LISTO";
-                document.getElementById('dropZone').style.background = "#e6f4ea";
                 document.getElementById('sectionPicking').style.display = 'block';
+                document.getElementById('uploadText').innerText = "✅ SISTEMA CONECTADO";
             }
         });
 
@@ -51,13 +51,12 @@
                     stock: parseFloat(f[3]) || 0
                 })).filter(item => item.cod !== "");
                 await set(dbRefMaestro, nuevoMaestro);
-                alert("Base de datos actualizada.");
+                alert("Maestro actualizado en nube.");
             };
         });
 
         document.getElementById('codigoBuscado').addEventListener('input', function() {
-            const valor = this.value.trim();
-            const producto = inventarioMaestro.find(p => p.cod === valor);
+            const producto = inventarioMaestro.find(p => p.cod === this.value.trim());
             if (producto) {
                 document.getElementById('resultadoBusqueda').style.display = 'block';
                 document.getElementById('resNombre').innerText = producto.nom;
@@ -71,125 +70,177 @@
 
         window.registrarEnNube = function() {
             const cant = document.getElementById('cantidadContada').value;
-            if (!cant || isNaN(cant)) return;
-            const data = {
+            if (!cant) return;
+            push(dbRefRegistros, {
                 cod: document.getElementById('codigoBuscado').value,
                 nom: document.getElementById('resNombre').innerText,
                 pos: document.getElementById('resPosicion').innerText,
                 cant: cant,
                 teorico: document.getElementById('resNombre').dataset.stock,
                 fecha: new Date().toLocaleString()
-            };
-            push(dbRefRegistros, data);
+            });
             document.getElementById('codigoBuscado').value = "";
             document.getElementById('cantidadContada').value = "";
             document.getElementById('resultadoBusqueda').style.display = 'none';
             document.getElementById('codigoBuscado').focus();
         };
 
-        onValue(dbRefRegistros, (snapshot) => {
-            const tabla = document.getElementById('cuerpoRegistros');
+        window.enviarIncidencia = function() {
+            const texto = document.getElementById('txtIncidencia').value.trim();
+            if (!texto) return;
+            push(dbRefIncidencias, { comentario: texto, fecha: new Date().toLocaleString() });
+            document.getElementById('txtIncidencia').value = "";
+            cerrarModal();
+        };
+
+        onValue(dbRefRegistros, (snapshot) => { renderTabla(snapshot.val(), 'cuerpoRegistros'); });
+        onValue(dbRefIncidencias, (snapshot) => { renderTablaInc(snapshot.val(), 'cuerpoIncidencias'); });
+
+        function renderTabla(data, elementId) {
+            const tabla = document.getElementById(elementId);
             tabla.innerHTML = "";
-            const data = snapshot.val();
             if (data) {
                 Object.keys(data).reverse().forEach(key => {
                     const item = data[key];
                     tabla.innerHTML += `<tr>
                         <td style="color:red; font-weight:bold;">${item.pos}</td>
-                        <td style="font-size:0.75rem">${item.nom}</td>
+                        <td>${item.nom}</td>
                         <td>${item.cant}</td>
-                        <td style="text-align:right"><button class="btn-del" onclick="eliminarFila('${key}')">🗑️</button></td>
+                        <td><button class="btn-del" onclick="eliminarItem('registros/${key}')">🗑️</button></td>
                     </tr>`;
                 });
             }
-        });
+        }
 
-        window.eliminarFila = (id) => { if(confirm("¿Eliminar registro?")) remove(ref(db, 'registros/' + id)); };
-        window.borrarTodo = () => { if(confirm("❗ ¿BORRAR TODO EL HISTORIAL?")) remove(dbRefRegistros); };
+        function renderTablaInc(data, elementId) {
+            const tabla = document.getElementById(elementId);
+            tabla.innerHTML = "";
+            if (data) {
+                Object.keys(data).reverse().forEach(key => {
+                    const item = data[key];
+                    tabla.innerHTML += `<tr>
+                        <td style="font-size:0.65rem; color:#666;">${item.fecha}</td>
+                        <td style="color:#e67e22; font-weight:bold;">${item.comentario}</td>
+                        <td><button class="btn-del" onclick="eliminarItem('incidencias_global/${key}')">🗑️</button></td>
+                    </tr>`;
+                });
+            }
+        }
+
         window.copiarTabla = () => {
             let txt = "Caja\tProducto\tCant\n";
             const filas = document.getElementById('cuerpoRegistros').rows;
             for (let f of filas) txt += `${f.cells[0].innerText}\t${f.cells[1].innerText}\t${f.cells[2].innerText}\n`;
-            navigator.clipboard.writeText(txt).then(() => alert("Copiado"));
+            navigator.clipboard.writeText(txt).then(() => alert("Tabla de Inventario copiada"));
         };
 
-        window.exportarExcel = async () => {
-            const snapshot = await get(dbRefRegistros);
-            const data = snapshot.val();
-            if(!data) return alert("No hay datos");
-            const rows = Object.values(data).map(i => ({
-                Codigo: i.cod, Nombre: i.nom, Caja: i.pos, Conteo: i.cant, Sistema: i.teorico, Dif: i.cant - i.teorico, Fecha: i.fecha
-            }));
-            const ws = XLSX.utils.json_to_sheet(rows);
+        window.exportarExcelTotal = async () => {
+            const snapInv = await get(dbRefRegistros);
+            const snapInc = await get(dbRefIncidencias);
+            
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Inventario");
-            XLSX.writeFile(wb, "Reporte_Nube.xlsx");
+            
+            // Hoja Inventario
+            if(snapInv.val()){
+                const rowsInv = Object.values(snapInv.val()).map(i => ({
+                    Caja: i.pos, Código: i.cod, Producto: i.nom, Cant: i.cant, Teórico: i.teorico, Diferencia: i.cant - i.teorico, Fecha: i.fecha
+                }));
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInv), "Inventario");
+            }
+            
+            // Hoja Incidencias
+            if(snapInc.val()){
+                const rowsInc = Object.values(snapInc.val()).map(i => ({ Fecha: i.fecha, Comentario: i.comentario }));
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInc), "Incidencias");
+            }
+            
+            XLSX.writeFile(wb, "Reporte_Completo_Nube.xlsx");
         };
+
+        window.eliminarItem = (path) => { if(confirm("¿Eliminar?")) remove(ref(db, path)); };
+        window.borrarTodo = () => { if(confirm("¿Borrar historial de inventario?")) remove(dbRefRegistros); };
+        window.abrirModal = () => document.getElementById('modalInc').style.display = 'flex';
+        window.cerrarModal = () => document.getElementById('modalInc').style.display = 'none';
     </script>
     <style>
-        :root { --primary: #1a73e8; --danger: #d93025; --bg: #f8f9fa; --success: #34a853; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; justify-content: center; }
-        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .upload-box { border: 2px dashed #ccc; padding: 15px; text-align: center; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
-        .search-section { display: none; }
-        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1.1rem; }
-        .result-card { background: #f1f8ff; border: 1px solid #c2e7ff; padding: 12px; border-radius: 8px; }
-        .ubicacion-valor { font-size: 1.8rem; font-weight: 800; color: var(--danger); text-align: center; display: block; margin: 5px 0; }
-        .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; font-size: 1rem; }
-        .actions-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; gap: 5px; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 10px; }
-        th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
-        .btn-mini { padding: 8px; border-radius: 4px; font-size: 0.75rem; border: 1px solid #ddd; background: white; cursor: pointer; font-weight: bold; }
-        .btn-del { background: none; border: none; color: #ccc; cursor: pointer; font-size: 1rem; }
+        :root { --primary: #1a73e8; --danger: #d93025; --warning: #f9ab00; --success: #34a853; --bg: #f8f9fa; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; }
+        .upload-box { border: 2px dashed #ccc; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; margin-bottom: 10px; font-size: 0.75rem; color: #666; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .result-card { background: #f1f8ff; padding: 12px; border-radius: 8px; margin-top: 5px; }
+        .ubicacion-valor { font-size: 2.2rem; font-weight: 800; color: var(--danger); text-align: center; display: block; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
+        
+        .nav-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
+        .btn-inc { background: var(--warning); color: black; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-copy { background: #fff; border: 1px solid #ddd; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-excel { background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; grid-column: span 2; }
+        .btn-clear { background: none; border: none; color: #999; text-decoration: underline; font-size: 0.7rem; cursor: pointer; margin-top: 5px; }
+
+        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; z-index:100; }
+        .modal-content { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 350px; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+        .btn-del { border: none; background: none; color: #ccc; cursor: pointer; font-size: 1rem; }
+        .section-title { font-size: 0.85rem; font-weight: bold; color: #333; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
-<div class="container">
-    <h2 style="text-align:center; color:var(--primary); font-size: 1.1rem; margin-top:0;">☁️ Picking Cloud Realtime</h2>
 
-    <div class="upload-box" id="dropZone" onclick="document.getElementById('inputExcel').click()">
-        <p id="uploadText" style="margin:0; font-size: 0.75rem; color:#666;">📂 Actualizar Maestro en Nube</p>
+<div class="container">
+    <div class="upload-box" onclick="document.getElementById('inputExcel').click()">
+        <p id="uploadText">📂 Sincronizar Maestro Excel</p>
         <input type="file" id="inputExcel" accept=".xlsx, .xls" style="display:none">
     </div>
 
-    <div class="search-section" id="sectionPicking">
-        <input type="text" id="codigoBuscado" 
-               inputmode="numeric" 
-               pattern="[0-9]*" 
-               placeholder="Escanear código numérico..." 
-               autocomplete="off">
-        
+    <div id="sectionPicking" style="display:none;">
+        <input type="text" id="codigoBuscado" inputmode="numeric" placeholder="Escanear Código..." autocomplete="off">
         <div id="resultadoBusqueda" class="result-card" style="display:none;">
             <div id="resNombre" style="font-weight:bold; font-size:0.85rem"></div>
-            <div style="background:white; border-radius:6px; padding:5px; margin:8px 0">
-                <span style="font-size:0.6rem; color:#666; display:block; text-align:center">UBICACIÓN</span>
-                <span class="ubicacion-valor" id="resPosicion"></span>
-            </div>
-            <input type="number" id="cantidadContada" 
-                   inputmode="numeric" 
-                   pattern="[0-9]*" 
-                   placeholder="Cantidad física">
+            <span class="ubicacion-valor" id="resPosicion"></span>
+            <input type="number" id="cantidadContada" inputmode="numeric" placeholder="Cantidad">
             <button onclick="registrarEnNube()" class="btn-main">CONFIRMAR REGISTRO</button>
         </div>
     </div>
 
-    <div class="actions-bar">
-        <strong style="font-size:0.8rem">Historial Global</strong>
-        <div style="display:flex; gap:3px">
-            <button class="btn-mini" style="color:red" onclick="borrarTodo()">Limpiar</button>
-            <button class="btn-mini" onclick="copiarTabla()">Copiar</button>
-            <button class="btn-mini" style="background:var(--success); color:white; border:none;" onclick="exportarExcel()">Excel</button>
-        </div>
+    <div class="nav-actions">
+        <button class="btn-copy" onclick="copiarTabla()">📋 Copiar Tabla</button>
+        <button class="btn-inc" onclick="abrirModal()">⚠️ Incidencia</button>
+        <button class="btn-excel" onclick="exportarExcelTotal()">💾 Descargar Reporte Excel</button>
     </div>
+    <center><button class="btn-clear" onclick="borrarTodo()">Borrar historial de inventario</button></center>
+</div>
 
+<div class="container">
+    <div class="section-title">📦 Historial de Conteo</div>
     <table>
-        <thead><tr><th>Caja</th><th>Producto</th><th>Cant</th><th></th></tr></thead>
         <tbody id="cuerpoRegistros"></tbody>
     </table>
+</div>
+
+<div class="container">
+    <div class="section-title">🚩 Incidencias / Comentarios</div>
+    <table>
+        <tbody id="cuerpoIncidencias"></tbody>
+    </table>
+</div>
+
+<div class="modal" id="modalInc">
+    <div class="modal-content">
+        <h3 style="margin-top:0">Nueva Incidencia</h3>
+        <textarea id="txtIncidencia" style="width:100%; height:100px; border:1px solid #ddd; border-radius:6px; padding:10px; font-family:inherit;" placeholder="Describe la incidencia o comentario..."></textarea>
+        <div style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn-main" onclick="enviarIncidencia()">Guardar</button>
+            <button class="btn-copy" style="width:100%" onclick="cerrarModal()">Cancelar</button>
+        </div>
+    </div>
 </div>
 
 <script>
     document.getElementById('cantidadContada').addEventListener('keydown', (e) => { if(e.key === 'Enter') registrarEnNube(); });
 </script>
+
 </body>
 </html>
