@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario Pro Cloud</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, remove, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        // --- TUS CREDENCIALES ACTUALIZADAS ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+            authDomain: "inventariopicking.firebaseapp.com",
+            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+            projectId: "inventariopicking",
+            storageBucket: "inventariopicking.firebasestorage.app",
+            messagingSenderId: "92946062722",
+            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+        };
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const dbRef = ref(db, 'registros');
+
+        let inventarioMaestro = [];
+
+        // 1. CARGA DE EXCEL (MAESTRO LOCAL)
+        document.getElementById('inputExcel').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(file);
+            reader.onload = (event) => {
+                const data = new Uint8Array(event.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+                
+                inventarioMaestro = rawRows.slice(1).map(f => ({
+                    cod: String(f[0] || '').trim(),
+                    nom: String(f[1] || ''),
+                    pos: String(f[2] || 'S/P'),
+                    stock: parseFloat(f[3]) || 0
+                })).filter(item => item.cod !== "");
+
+                document.getElementById('dropZone').classList.add('loaded');
+                document.getElementById('uploadText').innerText = "✅ Maestro: " + file.name;
+                document.getElementById('sectionPicking').style.display = 'block';
+            };
+        });
+
+        // 2. BUSCADOR
+        document.getElementById('codigoBuscado').addEventListener('input', function() {
+            const valor = this.value.trim();
+            const producto = inventarioMaestro.find(p => p.cod === valor);
+            if (producto) {
+                document.getElementById('resultadoBusqueda').style.display = 'block';
+                document.getElementById('resNombre').innerText = producto.nom;
+                document.getElementById('resPosicion').innerText = producto.pos;
+                document.getElementById('resNombre').dataset.stock = producto.stock;
+                document.getElementById('cantidadContada').focus();
+            } else {
+                document.getElementById('resultadoBusqueda').style.display = 'none';
+            }
+        });
+
+        // 3. GUARDAR EN LA NUBE (FIREBASE)
+        window.registrarEnNube = function() {
+            const cant = document.getElementById('cantidadContada').value;
+            if (!cant || isNaN(cant)) return;
+
+            const nuevoRegistro = {
+                cod: document.getElementById('codigoBuscado').value,
+                nom: document.getElementById('resNombre').innerText,
+                pos: document.getElementById('resPosicion').innerText,
+                cant: cant,
+                teorico: document.getElementById('resNombre').dataset.stock,
+                fecha: new Date().toLocaleString()
+            };
+
+            push(dbRef, nuevoRegistro);
+
+            // Limpiar
+            document.getElementById('codigoBuscado').value = "";
+            document.getElementById('cantidadContada').value = "";
+            document.getElementById('resultadoBusqueda').style.display = 'none';
+            document.getElementById('codigoBuscado').focus();
+        };
+
+        // 4. ESCUCHAR CAMBIOS EN TIEMPO REAL
+        onValue(dbRef, (snapshot) => {
+            const tabla = document.getElementById('cuerpoRegistros');
+            tabla.innerHTML = "";
+            const data = snapshot.val();
+            if (data) {
+                Object.keys(data).reverse().forEach(key => {
+                    const item = data[key];
+                    const fila = `<tr>
+                        <td style="color:red; font-weight:bold;">${item.pos}</td>
+                        <td style="font-size: 0.75rem;">${item.nom}</td>
+                        <td><strong>${item.cant}</strong></td>
+                        <td><button class="btn-del" onclick="eliminarRegistro('${key}')">🗑️</button></td>
+                    </tr>`;
+                    tabla.innerHTML += fila;
+                });
+            }
+        });
+
+        // 5. ELIMINAR REGISTRO INDIVIDUAL
+        window.eliminarRegistro = function(id) {
+            if(confirm("¿Eliminar este registro de la nube?")) {
+                remove(ref(db, 'registros/' + id));
+            }
+        };
+
+        // 6. BORRAR TODO EL HISTORIAL
+        window.borrarTodo = function() {
+            if(confirm("⚠️ ¿ESTÁS SEGURO? Se borrará el historial de TODOS los operadores.")) {
+                remove(dbRef);
+            }
+        };
+
+        // 7. EXPORTAR EXCEL GLOBAL
+        window.exportarExcelGlobal = async function() {
+            const snapshot = await get(dbRef);
+            const data = snapshot.val();
+            if(!data) return alert("No hay datos en la nube.");
+            
+            const rows = Object.values(data).map(i => ({
+                Codigo: i.cod,
+                Nombre: i.nom,
+                Caja: i.pos,
+                Conteo: i.cant,
+                Stock_Sistema: i.teorico,
+                Diferencia: i.cant - i.teorico,
+                Fecha: i.fecha
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Inventario_Global");
+            XLSX.writeFile(wb, "Inventario_Nube_Completo.xlsx");
+        };
+    </script>
+    
+    <style>
+        :root { --primary: #1a73e8; --danger: #d93025; --bg: #f8f9fa; --text: #3c4043; --success: #34a853; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); margin: 0; padding: 10px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .upload-box { border: 2px dashed #ccc; padding: 15px; text-align: center; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
+        .upload-box.loaded { border-color: var(--success); background: #e6f4ea; }
+        .search-section { display: none; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .result-card { background: #f1f8ff; border: 1px solid #c2e7ff; padding: 12px; border-radius: 8px; margin-top: 10px; }
+        .ubicacion-box { background: white; border: 1px solid #c2e7ff; padding: 8px; border-radius: 6px; text-align: center; margin-bottom: 10px; }
+        .ubicacion-valor { font-size: 1.8rem; font-weight: 800; color: var(--danger); }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
+        .actions-bar { display: flex; justify-content: space-between; margin-top: 20px; gap: 5px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 10px; }
+        th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
+        .btn-del { background: none; border: none; cursor: pointer; font-size: 1rem; color: #ccc; }
+        .btn-mini { padding: 5px 8px; border-radius: 4px; font-size: 0.7rem; border: 1px solid #ddd; background: white; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="text-align:center; color:var(--primary); font-size: 1.2rem;">☁️ Inventario Realtime</h2>
+
+    <div class="upload-box" id="dropZone" onclick="document.getElementById('inputExcel').click()">
+        <p id="uploadText" style="margin:0; font-size: 0.8rem;">📂 Cargar Maestro para Búsqueda</p>
+        <input type="file" id="inputExcel" accept=".xlsx, .xls" style="display:none">
+    </div>
+
+    <div class="search-section" id="sectionPicking">
+        <input type="text" id="codigoBuscado" placeholder="Escanear producto..." autocomplete="off">
+        
+        <div id="resultadoBusqueda" class="result-card">
+            <div id="resNombre" style="font-weight:bold; font-size: 0.9rem;"></div>
+            <div class="ubicacion-box">
+                <span style="font-size:0.6rem; color:#666; display:block;">UBICACIÓN</span>
+                <span class="ubicacion-valor" id="resPosicion"></span>
+            </div>
+            <input type="number" id="cantidadContada" placeholder="Cantidad física">
+            <button onclick="registrarEnNube()" class="btn-main">CONFIRMAR REGISTRO</button>
+        </div>
+    </div>
+
+    <div style="margin-top:20px;">
+        <div class="actions-bar">
+            <strong>Historial Global</strong>
+            <div>
+                <button class="btn-mini" style="color:red;" onclick="borrarTodo()">Borrar Todo</button>
+                <button class="btn-mini" style="background:var(--success); color:white; border:none;" onclick="exportarExcelGlobal()">Descargar Excel</button>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Caja</th>
+                    <th>Producto</th>
+                    <th>Cant</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="cuerpoRegistros"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Manejo de Enter para flujo rápido
+    document.getElementById('cantidadContada').addEventListener('keydown', (e) => {
+        if(e.key === 'Enter') registrarEnNube();
+    });
+</script>
+
+</body>
+</html>
