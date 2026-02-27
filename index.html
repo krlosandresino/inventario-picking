@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventario Picking Cloud - Pro</title>
+    <title>Inventario Picking Cloud - Pro Num</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
@@ -26,7 +26,6 @@
 
         let inventarioMaestro = [];
 
-        // 1. SINCRONIZACIÓN AUTOMÁTICA DEL MAESTRO
         onValue(dbRefMaestro, (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -37,7 +36,6 @@
             }
         });
 
-        // 2. CARGAR MAESTRO A LA NUBE (Solo una vez)
         document.getElementById('inputExcel').addEventListener('change', (e) => {
             const file = e.target.files[0];
             const reader = new FileReader();
@@ -53,11 +51,10 @@
                     stock: parseFloat(f[3]) || 0
                 })).filter(item => item.cod !== "");
                 await set(dbRefMaestro, nuevoMaestro);
-                alert("Base de datos actualizada para todos los dispositivos.");
+                alert("Base de datos actualizada.");
             };
         });
 
-        // 3. BUSCADOR
         document.getElementById('codigoBuscado').addEventListener('input', function() {
             const valor = this.value.trim();
             const producto = inventarioMaestro.find(p => p.cod === valor);
@@ -72,7 +69,6 @@
             }
         });
 
-        // 4. REGISTRAR CONTEO
         window.registrarEnNube = function() {
             const cant = document.getElementById('cantidadContada').value;
             if (!cant || isNaN(cant)) return;
@@ -91,7 +87,6 @@
             document.getElementById('codigoBuscado').focus();
         };
 
-        // 5. HISTORIAL REALTIME
         onValue(dbRefRegistros, (snapshot) => {
             const tabla = document.getElementById('cuerpoRegistros');
             tabla.innerHTML = "";
@@ -109,18 +104,13 @@
             }
         });
 
-        // FUNCIONES DE LOS BOTONES
         window.eliminarFila = (id) => { if(confirm("¿Eliminar registro?")) remove(ref(db, 'registros/' + id)); };
-        
-        window.borrarTodo = () => { 
-            if(confirm("❗ ¿BORRAR TODO EL HISTORIAL EN LA NUBE?")) remove(dbRefRegistros); 
-        };
-
+        window.borrarTodo = () => { if(confirm("❗ ¿BORRAR TODO EL HISTORIAL?")) remove(dbRefRegistros); };
         window.copiarTabla = () => {
             let txt = "Caja\tProducto\tCant\n";
             const filas = document.getElementById('cuerpoRegistros').rows;
             for (let f of filas) txt += `${f.cells[0].innerText}\t${f.cells[1].innerText}\t${f.cells[2].innerText}\n`;
-            navigator.clipboard.writeText(txt).then(() => alert("Copiado al portapapeles"));
+            navigator.clipboard.writeText(txt).then(() => alert("Copiado"));
         };
 
         window.exportarExcel = async () => {
@@ -142,14 +132,14 @@
         .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .upload-box { border: 2px dashed #ccc; padding: 15px; text-align: center; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
         .search-section { display: none; }
-        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1.1rem; }
         .result-card { background: #f1f8ff; border: 1px solid #c2e7ff; padding: 12px; border-radius: 8px; }
         .ubicacion-valor { font-size: 1.8rem; font-weight: 800; color: var(--danger); text-align: center; display: block; margin: 5px 0; }
-        .btn-main { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
-        .actions-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; flex-wrap: wrap; gap: 5px; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .actions-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; gap: 5px; }
         table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 10px; }
         th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
-        .btn-mini { padding: 5px 8px; border-radius: 4px; font-size: 0.7rem; border: 1px solid #ddd; background: white; cursor: pointer; font-weight: bold; }
+        .btn-mini { padding: 8px; border-radius: 4px; font-size: 0.75rem; border: 1px solid #ddd; background: white; cursor: pointer; font-weight: bold; }
         .btn-del { background: none; border: none; color: #ccc; cursor: pointer; font-size: 1rem; }
     </style>
 </head>
@@ -158,19 +148,27 @@
     <h2 style="text-align:center; color:var(--primary); font-size: 1.1rem; margin-top:0;">☁️ Picking Cloud Realtime</h2>
 
     <div class="upload-box" id="dropZone" onclick="document.getElementById('inputExcel').click()">
-        <p id="uploadText" style="margin:0; font-size: 0.75rem; color:#666;">📂 Click para actualizar Maestro en Nube</p>
+        <p id="uploadText" style="margin:0; font-size: 0.75rem; color:#666;">📂 Actualizar Maestro en Nube</p>
         <input type="file" id="inputExcel" accept=".xlsx, .xls" style="display:none">
     </div>
 
     <div class="search-section" id="sectionPicking">
-        <input type="text" id="codigoBuscado" placeholder="Escanear producto..." autocomplete="off">
+        <input type="text" id="codigoBuscado" 
+               inputmode="numeric" 
+               pattern="[0-9]*" 
+               placeholder="Escanear código numérico..." 
+               autocomplete="off">
+        
         <div id="resultadoBusqueda" class="result-card" style="display:none;">
             <div id="resNombre" style="font-weight:bold; font-size:0.85rem"></div>
             <div style="background:white; border-radius:6px; padding:5px; margin:8px 0">
                 <span style="font-size:0.6rem; color:#666; display:block; text-align:center">UBICACIÓN</span>
                 <span class="ubicacion-valor" id="resPosicion"></span>
             </div>
-            <input type="number" id="cantidadContada" placeholder="Cantidad física">
+            <input type="number" id="cantidadContada" 
+                   inputmode="numeric" 
+                   pattern="[0-9]*" 
+                   placeholder="Cantidad física">
             <button onclick="registrarEnNube()" class="btn-main">CONFIRMAR REGISTRO</button>
         </div>
     </div>
