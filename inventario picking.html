@@ -68,7 +68,7 @@
             if (data) {
                 inventarioMaestro = Object.values(data);
                 document.getElementById('sectionPicking').style.display = 'block';
-                document.getElementById('statusInv').innerText = "✅ INVENTARIO CONECTADO";
+                document.getElementById('statusInv').innerText = "🛜 INVENTARIO EN LÍNEA";
                 get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
             }
         });
