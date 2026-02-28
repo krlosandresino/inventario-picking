@@ -3,317 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📦 Inventario Picking</title>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, onValue, remove, set, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
-            authDomain: "inventariopicking.firebaseapp.com",
-            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
-            projectId: "inventariopicking",
-            storageBucket: "inventariopicking.firebasestorage.app",
-            messagingSenderId: "92946062722",
-            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-        const dbRefRegistros = ref(db, 'registros');
-        const dbRefMaestro = ref(db, 'maestro');
-        const dbRefIncidencias = ref(db, 'incidencias_global');
-
-        let inventarioMaestro = [];
-        let usuarioActual = "";
-
-        window.onload = () => {
-            const user = prompt("Ingrese su nombre:");
-            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
-            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
-        };
-
-        function actualizarDashboard(registros) {
-            if (!inventarioMaestro.length) return;
-            const codigosContados = new Set(Object.values(registros || {}).map(r => r.cod));
-            const totalMaestro = inventarioMaestro.length;
-            const avance = codigosContados.size;
-            const porcentaje = Math.round((avance / totalMaestro) * 100);
-            
-            document.getElementById('barrita').style.width = porcentaje + "%";
-            document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
-        }
-
-        onValue(dbRefMaestro, (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                inventarioMaestro = Object.values(data);
-                document.getElementById('sectionPicking').style.display = 'block';
-                document.getElementById('uploadText').innerText = "✅ INVENTARIO CONECTADO";
-                get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
-            }
-        });
-
-        function renderizadoOptimizado(data, elementId, tipo) {
-            const tabla = document.getElementById(elementId);
-            if (!data) { tabla.innerHTML = ""; return; }
-            if (tipo === 'ingresos') actualizarDashboard(data);
-
-            const keys = Object.keys(data).reverse();
-            tabla.innerHTML = ""; 
-            let index = 0;
-            const size = 50; 
-
-            function drawNextChunk() {
-                const chunk = keys.slice(index, index + size);
-                let html = "";
-                chunk.forEach(key => {
-                    const item = data[key];
-                    if (tipo === 'ingresos') {
-                        html += `<tr>
-                            <td style="color:red; font-weight:bold; width: 25%; vertical-align: middle; padding-left:10px;">${item.pos}</td>
-                            <td style="font-size:0.7rem; color:#666; width: 20%; vertical-align: middle;">${item.cod}<br><small>${item.usuario || ''}</small></td>
-                            <td style="font-size:0.75rem; width: 40%; line-height: 1.2; vertical-align: middle;">${item.nom}</td>
-                            <td style="font-weight:bold; width: 10%; text-align: right; vertical-align: middle; padding-right:15px;">${item.cant}</td>
-                            <td style="width: 5%; text-align: center; vertical-align: middle;">
-                                <button class="btn-del" onclick="eliminarItem('registros/${key}')">🗑️</button>
-                            </td>
-                        </tr>`;
-                    } else {
-                        html += `<tr>
-                            <td style="font-size:0.65rem; color:#666; vertical-align: middle;">${item.fecha}</td>
-                            <td style="color:#e67e22; font-weight:bold; vertical-align: middle;">${item.comentario}</td>
-                            <td style="vertical-align: middle;"><button class="btn-del" onclick="eliminarItem('incidencias_global/${key}')">🗑️</button></td>
-                        </tr>`;
-                    }
-                });
-                tabla.insertAdjacentHTML('beforeend', html);
-                index += size;
-                if (index < keys.length) { requestAnimationFrame(drawNextChunk); }
-            }
-            drawNextChunk();
-        }
-
-        window.intentarSubirExcel = () => {
-            document.getElementById('modalLogin').style.display = 'flex';
-            document.getElementById('userLogin').focus();
-        };
-
-        window.validarAcceso = () => {
-            if (document.getElementById('userLogin').value === "oriflame" && document.getElementById('passLogin').value === "2026") {
-                document.getElementById('inputExcel').click();
-                document.getElementById('userLogin').value = "";
-                document.getElementById('passLogin').value = "";
-            } else { alert("Usuario o clave incorrectos"); }
-        };
-
-        document.getElementById('inputExcel').addEventListener('change', (e) => {
-            cerrarLogin();
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.readAsArrayBuffer(file);
-            reader.onload = async (event) => {
-                const data = new Uint8Array(event.target.result);
-                const wb = XLSX.read(data, { type: 'array' });
-                const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-                const nuevoMaestro = rawRows.slice(1).map(f => ({
-                    cod: String(f[0] || '').trim(), nom: String(f[1] || ''), pos: String(f[2] || 'S/P'), stock: parseFloat(f[3]) || 0
-                })).filter(item => item.cod !== "");
-                await set(dbRefMaestro, nuevoMaestro);
-                alert("Inventario actualizado en la nube.");
-            };
-        });
-
-        window.registrarEnNube = () => {
-            const cant = document.getElementById('cantidadContada').value;
-            if (!cant) return;
-            push(dbRefRegistros, {
-                cod: document.getElementById('codigoBuscado').value,
-                nom: document.getElementById('resNombre').innerText,
-                pos: document.getElementById('resPosicion').innerText,
-                cant: cant, 
-                teorico: document.getElementById('resNombre').dataset.stock, 
-                fecha: new Date().toLocaleString(),
-                usuario: usuarioActual 
-            });
-            document.getElementById('codigoBuscado').value = "";
-            document.getElementById('cantidadContada').value = "";
-            document.getElementById('resultadoBusqueda').style.display = 'none';
-            document.getElementById('codigoBuscado').focus();
-        };
-
-        window.enviarIncidencia = () => {
-            const cod = document.getElementById('fueracod').value.trim();
-            const pos = document.getElementById('fuerapos').value.trim();
-            const cant = document.getElementById('fueracant').value.trim();
-            if (!cod || !pos || !cant) { alert("Por favor rellene todos los campos"); return; }
-            push(dbRefIncidencias, { 
-                comentario: `Cód: ${cod} | Ubi: ${pos} | Cant: ${cant}`, 
-                fecha: new Date().toLocaleString(),
-                usuario: usuarioActual,
-                // Guardamos los campos por separado para la exportación limpia
-                detalles: { cod, pos, cant }
-            });
-            document.getElementById('fueracod').value = ""; document.getElementById('fuerapos').value = ""; document.getElementById('fueracant').value = "";
-            cerrarModal();
-        };
-
-        onValue(dbRefRegistros, (snap) => renderizadoOptimizado(snap.val(), 'cuerpoRegistros', 'ingresos'));
-        onValue(dbRefIncidencias, (snap) => renderizadoOptimizado(snap.val(), 'cuerpoIncidencias', 'incidencias'));
-
-        window.exportarExcelTotal = async () => {
-            const snapInv = await get(dbRefRegistros);
-            const snapInc = await get(dbRefIncidencias);
-            const wb = XLSX.utils.book_new();
-            
-            if(snapInv.val()){
-                const rowsInv = Object.values(snapInv.val()).map(i => ({ 
-                    Caja: i.pos, Código: i.cod, Producto: i.nom, Registo: i.cant, 
-                    Stock: i.teorico, Diferencia: i.cant - i.teorico, Operador: i.usuario || '', Fecha: i.fecha 
-                }));
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInv), "Inventario");
-            }
-            
-            if(snapInc.val()){
-                const rowsInc = Object.values(snapInc.val()).map(i => {
-                    // Intentamos usar los campos estructurados si existen, sino parseamos el comentario
-                    let c = "", p = "", q = "";
-                    if(i.detalles) {
-                        c = i.detalles.cod; p = i.detalles.pos; q = i.detalles.cant;
-                    } else {
-                        const partes = i.comentario.split('|');
-                        c = (partes[0] || "").split(':')[1] || "";
-                        p = (partes[1] || "").split(':')[1] || "";
-                        q = (partes[2] || "").split(':')[1] || "";
-                    }
-                    return { 
-                        Fecha: i.fecha, Código: c.trim(), Ubicación: p.trim(), 
-                        Cantidad: q.trim(), Operador: i.usuario || '' 
-                    };
-                });
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInc), "Fuera de Stock");
-            }
-            XLSX.writeFile(wb, "Reporte_Inventario_PL.xlsx");
-        };
-
-        window.eliminarItem = (p) => { if(confirm("¿Eliminar?")) remove(ref(db, p)); };
-        window.borrarTodo = async () => { if(confirm("¿Borrar todo?")) { await remove(dbRefRegistros); await remove(dbRefIncidencias); alert("Historial borrado."); } };
-        window.abrirModal = () => { document.getElementById('modalInc').style.display='flex'; document.getElementById('fueracod').focus(); };
-        window.cerrarModal = () => document.getElementById('modalInc').style.display='none';
-        window.cerrarLogin = () => document.getElementById('modalLogin').style.display='none';
-        window.copiarTabla = () => {
-            let txt = "Caja\tCódigo\tProducto\tCant\n";
-            [...document.getElementById('cuerpoRegistros').rows].forEach(f => txt += `${f.cells[0].innerText}\t${f.cells[1].innerText}\t${f.cells[2].innerText}\t${f.cells[3].innerText}\n`);
-            navigator.clipboard.writeText(txt).then(() => alert("Tabla copiada"));
-        };
-
-        document.getElementById('codigoBuscado').addEventListener('input', function() {
-            const producto = inventarioMaestro.find(p => p.cod === this.value.trim());
-            if (producto) {
-                document.getElementById('resultadoBusqueda').style.display = 'block';
-                document.getElementById('resNombre').innerText = producto.nom;
-                document.getElementById('resPosicion').innerText = producto.pos;
-                document.getElementById('resNombre').dataset.stock = producto.stock;
-                document.getElementById('cantidadContada').focus();
-            } else { document.getElementById('resultadoBusqueda').style.display = 'none'; }
-        });
-    </script>
+    <title>📈 Inventario Picking</title>
     <style>
-        :root { --primary: #1a73e8; --danger: #d93025; --warning: #f9ab00; --success: #34a853; --bg: #f8f9fa; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
-        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; }
-        .upload-box { border: 2px dashed #ccc; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; margin-bottom: 10px; font-size: 0.75rem; color: #666; }
-        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
-        .result-card { background: #f1f8ff; padding: 12px; border-radius: 8px; margin-top: 5px; }
-        .ubicacion-valor { font-size: 2.2rem; font-weight: 800; color: var(--danger); text-align: center; display: block; }
-        .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
-        .nav-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
-        .btn-inc { background: var(--warning); color: black; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-        .btn-copy { background: #fff; border: 1px solid #ddd; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        .btn-excel { background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; grid-column: span 2; }
-        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; z-index:100; }
-        .modal-content { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 350px; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
-        th, td { padding: 12px 5px; border-bottom: 1px solid #eee; text-align: left; }
-        .btn-del { border: none; background: none; color: #ccc; cursor: pointer; font-size: 1.2rem; }
-        .section-title { font-size: 0.85rem; font-weight: bold; color: #333; display: flex; justify-content: space-between; }
-        .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 10px; margin: 10px 0; overflow: hidden; }
-        .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
+        :root { --primary: #2563eb; --secondary: #64748b; --dark: #0f172a; --bg: #f8fafc; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--dark); margin: 0; padding: 40px 20px; }
+        .container { max-width: 900px; margin: auto; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { font-size: 2.5rem; margin-bottom: 10px; color: var(--dark); }
+        p { color: var(--secondary); font-size: 1.1rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+        .card { background: white; padding: 30px; border-radius: 12px; text-decoration: none; color: inherit; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border: 1px solid #e2e8f0; transition: all 0.3s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .card:hover { transform: translateY(-5px); border-color: var(--primary); box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.1); }
+        .icon { font-size: 2.5rem; margin-bottom: 15px; }
+        .card span { font-weight: 600; font-size: 1.1rem; color: var(--primary); }
+        footer { margin-top: 60px; text-align: center; font-size: 0.9rem; color: var(--secondary); }
     </style>
 </head>
 <body>
-
 <div class="container">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary);">👤 Op: -</span>
+    <header>
+        <h1>INVENTARIO PICKING</h1>
+        <p>Control administrativo</p>
+    </header>
+    <div class="grid">
+        <a href="admin.html" class="card">
+            <div class="icon">🗄️</div>
+            <span>Administrador</span>
+        </a>
+        <a href="inventario picking.html" class="card">
+            <div class="icon">📦</div>
+            <span>PICKING</span>
+        </a>
     </div>
-    <div class="upload-box" onclick="intentarSubirExcel()">
-        <p id="uploadText">📂 Sincronizando Inventario...</p>
-        <div class="progress-container"><div id="barrita" class="progress-bar"></div></div>
-        <small id="textoAvance" style="font-size: 0.65rem;">Esperando maestro...</small>
-        <input type="file" id="inputExcel" accept=".xlsx, .xls" style="display:none">
-    </div>
-    <div id="sectionPicking" style="display:none;">
-        <input type="text" id="codigoBuscado" inputmode="numeric" placeholder="Registrar Código..." autocomplete="off">
-        <div id="resultadoBusqueda" class="result-card" style="display:none;">
-            <div id="resNombre" style="font-weight:bold; font-size:0.85rem"></div>
-            <span class="ubicacion-valor" id="resPosicion"></span>
-            <input type="number" id="cantidadContada" inputmode="numeric" placeholder="Cantidad">
-            <button onclick="registrarEnNube()" class="btn-main">INGRESAR</button>
-        </div>
-    </div>
-    <div class="nav-actions">
-        <button class="btn-copy" onclick="copiarTabla()">📋 Copiar Tabla</button>
-        <button class="btn-inc" onclick="abrirModal()">⚠️ Fuera de Stock</button>
-        <button class="btn-excel" onclick="exportarExcelTotal()">💾 Descargar Reporte</button>
-    </div>
-    <center><button style="background:none; border:none; color:#999; text-decoration:underline; font-size:0.7rem; cursor:pointer; margin-top:10px;" onclick="borrarTodo()">Borrar todos los registros del historial</button></center>
+    <footer>&copy; 2026 Creado por Carlos Burgos</footer>
 </div>
-
-<div class="modal" id="modalLogin">
-    <div class="modal-content">
-        <h3 style="margin-top:0">Acceso Restringido</h3>
-        <input type="text" id="userLogin" placeholder="Usuario">
-        <input type="password" id="passLogin" placeholder="Clave">
-        <div style="display:flex; gap:10px; margin-top:15px;">
-            <button class="btn-main" onclick="validarAcceso()">Entrar</button>
-            <button class="btn-copy" style="width:100%" onclick="cerrarLogin()">Cancelar</button>
-        </div>
-    </div>
-</div>
-
-<div class="container">
-    <div class="section-title">📦 HISTORIAL</div>
-    <table><tbody id="cuerpoRegistros"></tbody></table>
-</div>
-
-<div class="container">
-    <div class="section-title">🚩 Fuera de Stock</div>
-    <table><tbody id="cuerpoIncidencias"></tbody></table>
-</div>
-
-<div class="modal" id="modalInc">
-    <div class="modal-content">
-        <h3 style="margin-top:0">Código Fuera de Stock</h3>
-        <input type="text" id="fueracod" placeholder="Código" inputmode="numeric">
-        <input type="text" id="fuerapos" placeholder="Ubicación">
-        <input type="number" id="fueracant" placeholder="Cantidad" inputmode="numeric">
-        <div style="display:flex; gap:10px; margin-top:15px;">
-            <button class="btn-main" onclick="enviarIncidencia()">Guardar</button>
-            <button class="btn-copy" style="width:100%" onclick="cerrarModal()">Cancelar</button>
-        </div>
-    </div>
-</div>
-
 <script>
-    document.getElementById('cantidadContada').addEventListener('keydown', (e) => { if(e.key === 'Enter') registrarEnNube(); });
-    document.getElementById('userLogin').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('passLogin').focus(); });
-    document.getElementById('passLogin').addEventListener('keydown', (e) => { if(e.key === 'Enter') validarAcceso(); });
-    document.getElementById('fueracod').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('fuerapos').focus(); });
-    document.getElementById('fuerapos').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('fueracant').focus(); });
-    document.getElementById('fueracant').addEventListener('keydown', (e) => { if(e.key === 'Enter') enviarIncidencia(); });
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.onkeydown = e => {
+        if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && (e.keyCode == 85 || e.keyCode == 83))) return false;
+    };
 </script>
 </body>
 </html>

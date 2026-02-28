@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📦 Inventario Picking</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, remove, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+            authDomain: "inventariopicking.firebaseapp.com",
+            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+            projectId: "inventariopicking",
+            storageBucket: "inventariopicking.firebasestorage.app",
+            messagingSenderId: "92946062722",
+            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const dbRefRegistros = ref(db, 'registros');
+        const dbRefMaestro = ref(db, 'maestro');
+        const dbRefIncidencias = ref(db, 'incidencias_global');
+
+        let inventarioMaestro = [];
+        let usuarioActual = "";
+        let registroIdCorte = null; 
+
+        window.onload = () => {
+            const user = prompt("Ingrese su nombre:");
+            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
+            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+        };
+
+        window.eliminarItem = (path) => { 
+            if(confirm("¿Deseas eliminar este registro?")) {
+                remove(ref(db, path)); 
+            }
+        };
+
+        window.limpiarVistaVisual = () => {
+            if(confirm("¿Limpiar historial visual?")) {
+                get(dbRefRegistros).then((snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const keys = Object.keys(data);
+                        registroIdCorte = keys[keys.length - 1]; 
+                        document.getElementById('cuerpoRegistros').innerHTML = "";
+                    }
+                });
+            }
+        };
+
+        function actualizarDashboard(registros) {
+            if (!inventarioMaestro.length) return;
+            const codigosContados = new Set(Object.values(registros || {}).map(r => r.cod));
+            const totalMaestro = inventarioMaestro.length;
+            const avance = codigosContados.size;
+            const porcentaje = Math.round((avance / totalMaestro) * 100);
+            document.getElementById('barrita').style.width = porcentaje + "%";
+            document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
+        }
+
+        onValue(dbRefMaestro, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                inventarioMaestro = Object.values(data);
+                document.getElementById('sectionPicking').style.display = 'block';
+                document.getElementById('statusInv').innerText = "✅ INVENTARIO CONECTADO";
+                get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
+            }
+        });
+
+        function renderizadoOptimizado(data, elementId, tipo) {
+            const tabla = document.getElementById(elementId);
+            if (!data) { tabla.innerHTML = ""; return; }
+            if (tipo === 'ingresos') actualizarDashboard(data);
+
+            const keys = Object.keys(data).reverse();
+            let html = "";
+            
+            keys.forEach(key => {
+                if (tipo === 'ingresos' && registroIdCorte && key <= registroIdCorte) return;
+
+                const item = data[key];
+                if (tipo === 'ingresos') {
+                    html += `<tr>
+                        <td style="color:red; font-weight:bold; width: 20%;">${item.pos}</td>
+                        <td style="font-size:0.7rem; color:#666; width: 20%;">${item.cod}<br><small>${item.usuario || ''}</small></td>
+                        <td style="font-size:0.75rem; width: 40%;">${item.nom}</td>
+                        <td style="font-weight:bold; width: 10%; text-align: right;">${item.cant}</td>
+                        <td style="width: 10%; text-align: center;">
+                            <button style="border:none; background:none; cursor:pointer;" onclick="eliminarItem('registros/${key}')">🗑️</button>
+                        </td>
+                    </tr>`;
+                } else {
+                    html += `<tr>
+                        <td style="font-size:0.65rem; color:#666; width: 25%;">${item.fecha}</td>
+                        <td style="color:#e67e22; font-weight:bold; width: 65%;">${item.comentario}</td>
+                        <td style="width: 10%; text-align: center;">
+                            <button style="border:none; background:none; cursor:pointer;" onclick="eliminarItem('incidencias_global/${key}')">🗑️</button>
+                        </td>
+                    </tr>`;
+                }
+            });
+            tabla.innerHTML = html;
+        }
+
+        window.registrarEnNube = () => {
+            const cant = document.getElementById('cantidadContada').value;
+            if (!cant) return;
+            push(dbRefRegistros, {
+                cod: document.getElementById('codigoBuscado').value,
+                nom: document.getElementById('resNombre').innerText,
+                pos: document.getElementById('resPosicion').innerText,
+                cant: cant, 
+                teorico: document.getElementById('resNombre').dataset.stock, 
+                fecha: new Date().toLocaleString(),
+                usuario: usuarioActual 
+            });
+            document.getElementById('codigoBuscado').value = "";
+            document.getElementById('cantidadContada').value = "";
+            document.getElementById('resultadoBusqueda').style.display = 'none';
+            document.getElementById('codigoBuscado').focus();
+        };
+
+        window.enviarIncidencia = () => {
+            const cod = document.getElementById('fueracod').value.trim();
+            const pos = document.getElementById('fuerapos').value.trim();
+            const cant = document.getElementById('fueracant').value.trim();
+            if (!cod || !pos || !cant) { alert("Rellene todos los campos"); return; }
+            push(dbRefIncidencias, { 
+                comentario: `Cód: ${cod} | Ubi: ${pos} | Cant: ${cant}`, 
+                fecha: new Date().toLocaleString(),
+                usuario: usuarioActual,
+                detalles: { cod, pos, cant }
+            });
+            document.getElementById('fueracod').value = ""; document.getElementById('fuerapos').value = ""; document.getElementById('fueracant').value = "";
+            cerrarModal();
+        };
+
+        onValue(dbRefRegistros, (snap) => renderizadoOptimizado(snap.val(), 'cuerpoRegistros', 'ingresos'));
+        onValue(dbRefIncidencias, (snap) => renderizadoOptimizado(snap.val(), 'cuerpoIncidencias', 'incidencias'));
+
+        window.abrirModal = () => { document.getElementById('modalInc').style.display='flex'; document.getElementById('fueracod').focus(); };
+        window.cerrarModal = () => document.getElementById('modalInc').style.display='none';
+
+        document.getElementById('codigoBuscado').addEventListener('input', function() {
+            const producto = inventarioMaestro.find(p => p.cod === this.value.trim());
+            if (producto) {
+                document.getElementById('resultadoBusqueda').style.display = 'block';
+                document.getElementById('resNombre').innerText = producto.nom;
+                document.getElementById('resPosicion').innerText = producto.pos;
+                document.getElementById('resNombre').dataset.stock = producto.stock;
+                document.getElementById('cantidadContada').focus();
+            } else { document.getElementById('resultadoBusqueda').style.display = 'none'; }
+        });
+    </script>
+    <style>
+        :root { --primary: #1a73e8; --danger: #d93025; --warning: #f9ab00; --success: #34a853; --bg: #f8f9fa; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .result-card { background: #f1f8ff; padding: 12px; border-radius: 8px; margin-top: 5px; }
+        .ubicacion-valor { font-size: 2.2rem; font-weight: 800; color: var(--danger); text-align: center; display: block; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
+        .btn-inc { background: var(--warning); color: black; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
+        .btn-clear-view { background: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; padding: 6px 12px; border-radius: 6px; font-size: 0.7rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px; margin-top: 10px; }
+        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; z-index:100; }
+        .modal-content { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 350px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+        th, td { padding: 10px 5px; border-bottom: 1px solid #eee; text-align: left; vertical-align: middle; }
+        .section-title { font-size: 0.8rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 10px; }
+        .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; }
+        .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary);">👤 Op: -</span>
+        <small id="statusInv" style="font-size: 0.65rem; color: #666;">Conectando...</small>
+    </div>
+    <div class="progress-container"><div id="barrita" class="progress-bar"></div></div>
+    <center><small id="textoAvance" style="font-size: 0.65rem;">Cargando...</small></center>
+    
+    <div id="sectionPicking" style="display:none; margin-top: 15px;">
+        <input type="text" id="codigoBuscado" inputmode="numeric" placeholder="Registrar Código..." autocomplete="off">
+        <div id="resultadoBusqueda" class="result-card" style="display:none;">
+            <div id="resNombre" style="font-weight:bold; font-size:0.85rem"></div>
+            <span class="ubicacion-valor" id="resPosicion"></span>
+            <input type="number" id="cantidadContada" inputmode="numeric" placeholder="Cantidad">
+            <button onclick="registrarEnNube()" class="btn-main">INGRESAR</button>
+        </div>
+    </div>
+    
+    <button class="btn-inc" onclick="abrirModal()">⚠️ Reportar Fuera de Stock</button>
+    <center><button class="btn-clear-view" onclick="limpiarVistaVisual()">🧹 LIMPIAR VISTA</button></center>
+</div>
+
+<div class="container">
+    <div class="section-title">📝 HISTORIAL</div>
+    <table><tbody id="cuerpoRegistros"></tbody></table>
+</div>
+
+<div class="container">
+    <div class="section-title">🚩 FUERA DE STOCK REPORTADOS</div>
+    <table><tbody id="cuerpoIncidencias"></tbody></table>
+</div>
+
+<div class="modal" id="modalInc">
+    <div class="modal-content">
+        <h3 style="margin-top:0">Código Fuera de Stock</h3>
+        <input type="text" id="fueracod" placeholder="Código" inputmode="numeric">
+        <input type="text" id="fuerapos" placeholder="Ubicación">
+        <input type="number" id="fueracant" placeholder="Cantidad" inputmode="numeric">
+        <div style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn-main" onclick="enviarIncidencia()">Guardar</button>
+            <button class="btn-main" style="background:#ccc" onclick="cerrarModal()">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('cantidadContada').addEventListener('keydown', (e) => { if(e.key === 'Enter') registrarEnNube(); });
+    // Eventos de teclado para el modal
+    document.getElementById('fueracod').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fuerapos').focus(); } });
+    document.getElementById('fuerapos').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fueracant').focus(); } });
+    document.getElementById('fueracant').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); enviarIncidencia(); } });
+</script>
+</body>
+</html>
