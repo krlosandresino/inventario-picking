@@ -86,6 +86,9 @@
                     </tr>`;
             }).join('');
             document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
+            
+            // Re-aplicar filtro si hay algo escrito en el buscador al actualizar datos
+            ejecutarFiltro();
         }
 
         window.exportarExcelTotal = async () => {
@@ -144,6 +147,16 @@
                 alert("Datos limpiados correctamente.");
             }
         };
+
+        // Lógica del buscador
+        window.ejecutarFiltro = () => {
+            const term = document.getElementById('busquedaRealTime').value.toLowerCase();
+            const filas = document.querySelectorAll('#bodyMonitor tr');
+            filas.forEach(fila => {
+                const textoFila = fila.innerText.toLowerCase();
+                fila.style.display = textoFila.includes(term) ? "" : "none";
+            });
+        };
     </script>
     <style>
         :root { --primary: #4361ee; --bg: #f4f7fe; --danger: #e71d36; --success: #2ec4b6; --warning: #f9ab00; }
@@ -166,6 +179,10 @@
         .btn-blue { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .btn-danger { background: var(--danger); }
         .btn-success { background: var(--success); }
+        
+        /* Estilo sutil para el buscador */
+        .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; }
+        .search-input:focus { border-color: var(--primary); }
     </style>
 </head>
 <body>
@@ -200,6 +217,8 @@
     <div class="main-grid">
         <div class="section">
             <h3>Monitoreo operador</h3>
+            <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
+            
             <div class="scroll">
                 <table>
                     <thead><tr><th>Operadores</th><th>Código</th><th>Ubicación</th><th>Stock</th><th>Encontrados</th><th>Dif.</th></tr></thead>
