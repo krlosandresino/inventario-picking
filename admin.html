@@ -160,7 +160,7 @@
     </script>
     <style>
         :root { --primary: #4361ee; --bg: #f4f7fe; --danger: #e71d36; --success: #2ec4b6; --warning: #f9ab00; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; padding: 20px; user-select: none; }
         #loginOverlay { position: fixed; inset: 0; background: linear-gradient(135deg, #4361ee, #3a0ca3); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .login-card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); width: 350px; text-align: center; }
         .login-card input { width: 100%; padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 10px; box-sizing: border-box; }
@@ -179,8 +179,6 @@
         .btn-blue { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .btn-danger { background: var(--danger); }
         .btn-success { background: var(--success); }
-        
-        /* Estilo sutil para el buscador */
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; }
         .search-input:focus { border-color: var(--primary); }
     </style>
@@ -241,6 +239,16 @@
 <script>
     document.getElementById('userLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('passLog').focus(); });
     document.getElementById('passLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') validarAcceso(); });
+
+    // --- BLOQUE DE SEGURIDAD ---
+    document.addEventListener('contextmenu', event => event.preventDefault());
+    document.addEventListener('keydown', function(e) {
+        if (e.keyCode === 123) { e.preventDefault(); return false; }
+        if (e.ctrlKey && e.keyCode === 85) { e.preventDefault(); return false; }
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 73) { e.preventDefault(); return false; }
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 74) { e.preventDefault(); return false; }
+        if (e.ctrlKey && e.keyCode === 83) { e.preventDefault(); return false; }
+    });
 </script>
 </body>
 </html>

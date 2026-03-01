@@ -160,7 +160,7 @@
     </script>
     <style>
         :root { --primary: #1a73e8; --danger: #d93025; --warning: #f9ab00; --success: #34a853; --bg: #f8f9fa; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; user-select: none; }
         .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; }
         input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
         .result-card { background: #f1f8ff; padding: 12px; border-radius: 8px; margin-top: 5px; }
@@ -230,6 +230,40 @@
     document.getElementById('fueracod').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fuerapos').focus(); } });
     document.getElementById('fuerapos').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fueracant').focus(); } });
     document.getElementById('fueracant').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); enviarIncidencia(); } });
+
+    // --- BLOQUE DE SEGURIDAD SOLICITADO ---
+    
+    // Deshabilitar Clic Derecho
+    document.addEventListener('contextmenu', event => event.preventDefault());
+
+    // Bloquear atajos de teclado
+    document.addEventListener('keydown', function(e) {
+        // Bloquear F12
+        if (e.keyCode === 123) {
+            e.preventDefault();
+            return false;
+        }
+        // Bloquear Ctrl+U (Ver código fuente)
+        if (e.ctrlKey && e.keyCode === 85) {
+            e.preventDefault();
+            return false;
+        }
+        // Bloquear Ctrl+Shift+I (Inspeccionar)
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
+            e.preventDefault();
+            return false;
+        }
+        // Bloquear Ctrl+Shift+J (Consola)
+        if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
+            e.preventDefault();
+            return false;
+        }
+        // Bloquear Ctrl+S (Guardar página)
+        if (e.ctrlKey && e.keyCode === 83) {
+            e.preventDefault();
+            return false;
+        }
+    });
 </script>
 </body>
 </html>
