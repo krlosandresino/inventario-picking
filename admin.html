@@ -86,8 +86,6 @@
                     </tr>`;
             }).join('');
             document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
-            
-            // Re-aplicar filtro si hay algo escrito en el buscador al actualizar datos
             ejecutarFiltro();
         }
 
@@ -96,29 +94,43 @@
             const snapInc = await get(dbRefIncidencias);
             const wb = XLSX.utils.book_new();
             
-            if(snapInv.val()){
-                const data = snapInv.val();
-                const agrupados = {};
-                Object.values(data).forEach(i => {
-                    if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
-                    agrupados[i.cod].cant += parseFloat(i.cant || 0);
-                    agrupados[i.cod].listaUsuarios.add(i.usuario);
-                });
-                const rows = Object.values(agrupados).map(i => ({ 
-                    Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
-                    Encontrados: i.cant, Diferencia: i.cant - (i.teorico || 0),
-                    Operadores: Array.from(i.listaUsuarios).join(', ')
-                }));
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "REPORTE PL");
-            }
+            const registros = snapInv.val() || {};
+            const agrupados = {};
+            
+            // Agrupar lo que ya se registró
+            Object.values(registros).forEach(i => {
+                if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
+                agrupados[i.cod].cant += parseFloat(i.cant || 0);
+                agrupados[i.cod].listaUsuarios.add(i.usuario);
+            });
+
+            const codigosRegistrados = Object.keys(agrupados);
+            
+            // 1. Mapear registros existentes (GESTIONADOS)
+            const rows = Object.values(agrupados).map(i => ({ 
+                Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
+                Encontrados: i.cant, Diferencia: i.cant - (i.teorico || 0),
+                Operadores: Array.from(i.listaUsuarios).join(', '),
+                Estado: "GESTIONADO"
+            }));
+
+            // 2. Agregar productos del maestro que faltan (PENDIENTES)
+            dataMaestro.forEach(m => {
+                if (!codigosRegistrados.includes(String(m.cod))) {
+                    rows.push({
+                        Ubicacion: m.pos, Codigo: m.cod, Producto: m.nom, Stock: m.stock,
+                        Encontrados: 0, Diferencia: 0 - (m.stock || 0),
+                        Operadores: "---", Estado: "PENDIENTE"
+                    });
+                }
+            });
+
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "REPORTE GENERAL");
 
             if(snapInc.val()){
                 const rowsInc = Object.values(snapInc.val()).map(i => ({
-                    Fecha: i.fecha, 
-                    Operador: i.usuario, 
-                    Codigo: i.detalles ? i.detalles.cod : '', 
-                    Ubicacion: i.detalles ? i.detalles.pos : '', 
-                    Cantidad: i.detalles ? i.detalles.cant : ''
+                    Fecha: i.fecha, Operador: i.usuario, Codigo: i.detalles ? i.detalles.cod : '', 
+                    Ubicacion: i.detalles ? i.detalles.pos : '', Cantidad: i.detalles ? i.detalles.cant : ''
                 }));
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInc), "FUERA DE STOCK");
             }
@@ -148,7 +160,6 @@
             }
         };
 
-        // Lógica del buscador
         window.ejecutarFiltro = () => {
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
             const filas = document.querySelectorAll('#bodyMonitor tr');
@@ -240,7 +251,6 @@
     document.getElementById('userLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('passLog').focus(); });
     document.getElementById('passLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') validarAcceso(); });
 
-    // --- BLOQUE DE SEGURIDAD ---
     document.addEventListener('contextmenu', event => event.preventDefault());
     document.addEventListener('keydown', function(e) {
         if (e.keyCode === 123) { e.preventDefault(); return false; }
