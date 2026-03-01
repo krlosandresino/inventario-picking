@@ -175,6 +175,13 @@
         .section-title { font-size: 0.8rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 10px; }
         .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
+
+        /* NUEVA REGLA PARA EL SCROLL INTERNO */
+        .scrollable-table { 
+            max-height: 500px; /* Altura máxima antes de que salga la barra */
+            overflow-y: auto;  /* Habilitar scroll vertical */
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -203,12 +210,16 @@
 
 <div class="container">
     <div class="section-title">📝 HISTORIAL</div>
-    <table><tbody id="cuerpoRegistros"></tbody></table>
+    <div class="scrollable-table">
+        <table><tbody id="cuerpoRegistros"></tbody></table>
+    </div>
 </div>
 
 <div class="container">
     <div class="section-title">🚩 FUERA DE STOCK REPORTADOS</div>
-    <table><tbody id="cuerpoIncidencias"></tbody></table>
+    <div class="scrollable-table">
+        <table><tbody id="cuerpoIncidencias"></tbody></table>
+    </div>
 </div>
 
 <div class="modal" id="modalInc">
@@ -226,40 +237,12 @@
 
 <script>
     document.getElementById('cantidadContada').addEventListener('keydown', (e) => { if(e.key === 'Enter') registrarEnNube(); });
-    // Eventos de teclado para el modal
     document.getElementById('fueracod').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fuerapos').focus(); } });
     document.getElementById('fuerapos').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fueracant').focus(); } });
     document.getElementById('fueracant').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); enviarIncidencia(); } });
-
-    // --- BLOQUE DE SEGURIDAD SOLICITADO ---
-    
-    // Deshabilitar Clic Derecho
     document.addEventListener('contextmenu', event => event.preventDefault());
-
-    // Bloquear atajos de teclado
     document.addEventListener('keydown', function(e) {
-        // Bloquear F12
-        if (e.keyCode === 123) {
-            e.preventDefault();
-            return false;
-        }
-        // Bloquear Ctrl+U (Ver código fuente)
-        if (e.ctrlKey && e.keyCode === 85) {
-            e.preventDefault();
-            return false;
-        }
-        // Bloquear Ctrl+Shift+I (Inspeccionar)
-        if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
-            e.preventDefault();
-            return false;
-        }
-        // Bloquear Ctrl+Shift+J (Consola)
-        if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
-            e.preventDefault();
-            return false;
-        }
-        // Bloquear Ctrl+S (Guardar página)
-        if (e.ctrlKey && e.keyCode === 83) {
+        if (e.keyCode === 123 || (e.ctrlKey && e.keyCode === 85) || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.shiftKey && e.keyCode === 74) || (e.ctrlKey && e.keyCode === 83)) {
             e.preventDefault();
             return false;
         }
