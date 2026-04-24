@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Generador Acta de Inventario</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
+        .config-panel { background: white; padding: 20px; border-radius: 8px; max-width: 700px; margin: 0 auto 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        /* Formato Hoja A4 */
+        #acta-pdf { 
+            background: white; 
+            width: 210mm; 
+            height: 297mm; /* Altura fija A4 */
+            padding: 20mm; 
+            margin: auto; 
+            display: none; 
+            flex-direction: column; /* Para empujar la referencia al final */
+            box-sizing: border-box;
+        }
+
+        .logo-section { text-transform: uppercase; font-weight: bold; margin-bottom: 20px; }
+        .logo-main { font-size: 24px; letter-spacing: 3px; }
+        .logo-sub { font-size: 10px; font-weight: normal; }
+        
+        .fecha-doc { text-align: right; margin-bottom: 20px; font-size: 13px; }
+        .titulo { text-align: center; font-weight: bold; text-decoration: underline; margin-bottom: 30px; }
+        
+        .cuerpo-texto { text-align: justify; font-size: 13px; line-height: 1.5; margin-bottom: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+        table, th, td { border: 1px solid black; }
+        th { background-color: #f2f2f2; padding: 5px; }
+        td { padding: 5px; text-align: center; }
+        
+        .seccion-titulo { font-weight: bold; margin-top: 25px; border-bottom: 1px solid black; font-size: 14px; }
+        
+        .firmas { margin-top: 60px; display: flex; justify-content: space-around; text-align: center; font-size: 12px; }
+        .linea-firma { border-top: 1px solid black; width: 200px; margin-bottom: 5px; }
+
+        /* ESTA ES LA PARTE QUE MARCASTE EN AZUL AL FINAL */
+        .referencia-final { 
+            margin-top: auto; /* Empuja el div al puro fondo del contenedor flex */
+            font-size: 12px; 
+            text-align: left;
+            padding-bottom: 10px;
+        }
+
+        .btn { background: #00a651; color: white; padding: 10px 20px; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="config-panel">
+    <h3>Acta de Inventario Oriflame</h3>
+    <div style="margin-bottom: 10px;">
+        <label>Referencia Inventario: </label>
+        <input type="number" id="num_ref_input" value="395" style="padding:5px;">
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv">
+    <br><br>
+    <button class="btn" onclick="generarActa()">Analizar y Mostrar Acta</button>
+    <button class="btn" style="background:#444;" onclick="descargarPDF()">Descargar PDF</button>
+</div>
+
+<div id="acta-pdf">
+    <div class="logo-section">
+        <div class="logo-main">oriflame</div>
+        <div class="logo-sub">NATURAL SWEDISH COSMETICS</div>
+    </div>
+
+    <div class="fecha-doc">Quito, <span id="fecha_hoy"></span></div>
+
+    <div class="titulo">ACTA DE INVENTARIO</div>
+
+    <div class="cuerpo-texto">
+        En la ciudad de Quito, a los <span id="dia_inv">__</span> días del mes de <span id="mes_inv">_______</span> del 2026, se procedió a realizar el inventario físico de la Quito de Oriflame del Ecuador, ubicada en la Barón de Carondelet N37-55 y Av. América, utilizando los lineamientos descritos en los procedimientos, las diferencias encontradas son de conocimiento del encargado de la bodega y se han realizado las verificaciones necesarias para asegurar que los conteos sean los correctos. 
+        <br><br>
+        El detalle de las diferencias se anexa a esta acta, para lo cual firman las partes con conocimiento y aceptación de las mismas, las cuales según los procedimientos tienen un periodo de tres días para sustentarlas.
+    </div>
+
+    <div class="seccion-titulo">RESUMEN DIFERENCIAS</div>
+    <table>
+        <thead>
+            <tr>
+                <th rowspan="2">DETALLE</th>
+                <th colspan="2">INCONSISTENCIAS (Unidades)</th>
+                <th colspan="3">INCONSISTENCIAS (Dólares)</th>
+            </tr>
+            <tr>
+                <th>SOBRANTES</th>
+                <th>FALTANTES</th>
+                <th>SOBRANTES</th>
+                <th>FALTANTES</th>
+                <th>NETO</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="text-align:left;">UNIDADES DESCUADRADAS</td>
+                <td id="sob_cant">0</td>
+                <td id="fal_cant">0</td>
+                <td id="sob_dol">0.00</td>
+                <td id="fal_dol">0.00</td>
+                <td id="neto_dol"><b>0.00</b></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div style="margin-top: 20px;">
+        <table style="width: 250px;">
+            <tr><td style="text-align:left;">CODIGOS DESCUADRADOS</td><td id="cod_desc">0</td></tr>
+            <tr><td style="text-align:left;">CODIGOS CUADRADOS</td><td id="cod_cuad">0</td></tr>
+            <tr><td style="text-align:left;">CODIGOS CONTADOS</td><td id="cod_tot">0</td></tr>
+            <tr><td style="text-align:left; font-weight:bold;">% ERI</td><td id="eri_val" style="font-weight:bold;">0%</td></tr>
+        </table>
+    </div>
+
+    <div class="firmas">
+        <div>
+            <div class="linea-firma"></div>
+            JEFE DE BODEGA<br>
+            <strong>LTORIS</strong>
+        </div>
+        <div>
+            <div class="linea-firma"></div>
+            CONTABILIDAD
+        </div>
+    </div>
+
+    <div class="referencia-final">
+        Referencia Inventario No. <span id="num_secuencial">0395</span>
+    </div>
+</div>
+
+<script>
+    let seq = 0;
+
+    function generarActa() {
+        const file = document.getElementById('fileInput').files[0];
+        if(!file) return alert("Suba un archivo.");
+
+        // Manejo de la Referencia
+        if(seq === 0) seq = parseInt(document.getElementById('num_ref_input').value);
+        else seq++;
+        document.getElementById('num_secuencial').innerText = seq.toString().padStart(4, '0');
+
+        // Fecha Actual
+        const hoy = new Date();
+        document.getElementById('fecha_hoy').innerText = hoy.toLocaleDateString('es-EC', {day:'numeric', month:'long', year:'numeric'});
+        document.getElementById('dia_inv').innerText = hoy.getDate();
+        document.getElementById('mes_inv').innerText = hoy.toLocaleDateString('es-EC', {month:'long'});
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(sheet);
+
+            let sobrantes = 0, faltantes = 0, codDesc = 0, codCuad = 0;
+            let precio = 6.00; // Valor de referencia
+
+            json.forEach(row => {
+                let d = parseFloat(row.Diferencia) || 0;
+                if(d > 0) { sobrantes += d; codDesc++; }
+                else if(d < 0) { faltantes += Math.abs(d); codDesc++; }
+                else { codCuad++; }
+            });
+
+            const total = json.length;
+            const eri = total > 0 ? ((codCuad / total) * 100).toFixed(2) : 0;
+
+            document.getElementById('sob_cant').innerText = sobrantes;
+            document.getElementById('fal_cant').innerText = "-" + faltantes;
+            document.getElementById('sob_dol').innerText = (sobrantes * precio).toFixed(2);
+            document.getElementById('fal_dol').innerText = "-" + (faltantes * precio).toFixed(2);
+            document.getElementById('neto_dol').innerText = ((sobrantes - faltantes) * precio).toFixed(2);
+
+            document.getElementById('cod_desc').innerText = codDesc;
+            document.getElementById('cod_cuad').innerText = codCuad;
+            document.getElementById('cod_tot').innerText = total;
+            document.getElementById('eri_val').innerText = eri + "%";
+
+            document.getElementById('acta-pdf').style.display = 'flex';
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function descargarPDF() {
+        const element = document.getElementById('acta-pdf');
+        html2pdf().from(element).set({
+            margin: 0,
+            filename: `Acta_Inv_Ref_${seq}.pdf`,
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).save();
+    }
+</script>
+</body>
+</html>
