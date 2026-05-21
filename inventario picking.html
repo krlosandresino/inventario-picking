@@ -86,10 +86,13 @@
 
                 const item = data[key];
                 if (tipo === 'ingresos') {
+                    const nombreOriginal = item.nom || '';
+                    const nombreCorto = nombreOriginal.length > 20 ? nombreOriginal.substring(0, 20) + '...' : nombreOriginal;
+
                     html += `<tr>
                         <td style="color:red; font-weight:bold; width: 20%;">${item.pos}</td>
-                        <td style="font-size:0.7rem; color:#666; width: 20%;">${item.cod}<br><small>${item.usuario || ''}</small></td>
-                        <td style="font-size:0.75rem; width: 40%;">${item.nom}</td>
+                        <td style="font-size:0.7rem; color:#666; width: 20%;" class="codigo-celda">${item.cod}<br><small>${item.usuario || ''}</small></td>
+                        <td style="font-size:0.75rem; width: 40%;">${nombreCorto}</td>
                         <td style="font-weight:bold; width: 10%; text-align: right;">${item.cant}</td>
                         <td style="width: 10%; text-align: center;">
                             <button style="border:none; background:none; cursor:pointer;" onclick="eliminarItem('registros/${key}')">🗑️</button>
@@ -106,6 +109,11 @@
                 }
             });
             tabla.innerHTML = html;
+            
+            // Si el usuario ya tenía algo escrito en el buscador, aplicar el filtro tras renderizar
+            if (tipo === 'ingresos') {
+                filtrarHistorial();
+            }
         }
 
         window.registrarEnNube = () => {
@@ -157,6 +165,24 @@
                 document.getElementById('cantidadContada').focus();
             } else { document.getElementById('resultadoBusqueda').style.display = 'none'; }
         });
+
+        // Función local para filtrar las filas del historial por código
+        window.filtrarHistorial = () => {
+            const query = document.getElementById('buscarEnHistorial').value.trim();
+            const filas = document.querySelectorAll('#cuerpoRegistros tr');
+            filas.forEach(fila => {
+                const celdaCodigo = fila.querySelector('.codigo-celda');
+                if (celdaCodigo) {
+                    // Extrae el código puro ignorando la etiqueta <small> del usuario
+                    const codigoTexto = celdaCodigo.childNodes[0].textContent.trim();
+                    if (codigoTexto.includes(query)) {
+                        fila.style.display = '';
+                    } else {
+                        fila.style.display = 'none';
+                    }
+                }
+            });
+        };
     </script>
     <style>
         :root { --primary: #1a73e8; --danger: #d93025; --warning: #f9ab00; --success: #34a853; --bg: #f8f9fa; }
@@ -176,10 +202,9 @@
         .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
 
-        /* NUEVA REGLA PARA EL SCROLL INTERNO */
         .scrollable-table { 
-            max-height: 500px; /* Altura máxima antes de que salga la barra */
-            overflow-y: auto;  /* Habilitar scroll vertical */
+            max-height: 500px; 
+            overflow-y: auto;  
             margin-top: 5px;
         }
     </style>
@@ -210,6 +235,7 @@
 
 <div class="container">
     <div class="section-title">📝 HISTORIAL</div>
+    <input type="text" id="buscarEnHistorial" oninput="filtrarHistorial()" inputmode="numeric" placeholder="🔍 Buscar códigos registrados..." autocomplete="off" style="padding: 8px; font-size: 0.85rem; margin-bottom: 5px;">
     <div class="scrollable-table">
         <table><tbody id="cuerpoRegistros"></tbody></table>
     </div>
