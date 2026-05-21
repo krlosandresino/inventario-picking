@@ -83,11 +83,57 @@
                         <td align="center">${teo}</td>
                         <td align="center"><b>${fis}</b></td>
                         <td align="center" style="color:${colorDif}; font-weight:bold;">${dif > 0 ? '+'+dif : dif}</td>
+                        <td align="center">
+                            <button class="btn-action-delete" onclick="eliminarRegistroIndividual('${reg.cod}')" title="Eliminar registro">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
                     </tr>`;
             }).join('');
             document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
             ejecutarFiltro();
         }
+
+        window.eliminarRegistroIndividual = async (codigo) => {
+            if(confirm(`¿Deseas eliminar los registros del código ${codigo} para que lo vuelvan a ingresar?`)) {
+                const snap = await get(dbRefRegistros);
+                const registros = snap.val() || {};
+                
+                for (const key in registros) {
+                    if (String(registros[key].cod) === String(codigo)) {
+                        await remove(ref(db, `registros/${key}`));
+                    }
+                }
+                alert(`Registros del código ${codigo} eliminados.`);
+            }
+        };
+
+        window.copiarTablaExcel = () => {
+            const filas = document.querySelectorAll('#bodyMonitor tr');
+            let textoCopiar = "Operadores\tCódigo\tUbicación\tStock\tEncontrados\tDif.\n";
+            
+            filas.forEach(fila => {
+                if (fila.style.display !== "none") {
+                    const celdas = fila.querySelectorAll('td');
+                    if (celdas.length >= 6) {
+                        const operadores = celdas[0].innerText.trim();
+                        const codigo = celdas[1].innerText.trim();
+                        const ubicacion = celdas[2].innerText.trim();
+                        const stock = celdas[3].innerText.trim();
+                        const encontrados = celdas[4].innerText.trim();
+                        const dif = celdas[5].innerText.trim();
+                        
+                        textoCopiar += `${operadores}\t${codigo}\t${ubicacion}\t${stock}\t${encontrados}\t${dif}\n`;
+                    }
+                }
+            });
+
+            navigator.clipboard.writeText(textoCopiar).then(() => {
+                alert("¡Datos copiados! Ya puedes pegarlos en Excel con Ctrl+V.");
+            }).catch(err => {
+                alert("Error al copiar los datos: " + err);
+            });
+        };
 
         window.exportarExcelTotal = async () => {
             const snapInv = await get(dbRefRegistros);
@@ -97,7 +143,6 @@
             const registros = snapInv.val() || {};
             const agrupados = {};
             
-            // Agrupar lo que ya se registró
             Object.values(registros).forEach(i => {
                 if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
                 agrupados[i.cod].cant += parseFloat(i.cant || 0);
@@ -106,7 +151,6 @@
 
             const codigosRegistrados = Object.keys(agrupados);
             
-            // 1. Mapear registros existentes (GESTIONADOS)
             const rows = Object.values(agrupados).map(i => ({ 
                 Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
                 Encontrados: i.cant, Diferencia: i.cant - (i.teorico || 0),
@@ -114,7 +158,6 @@
                 Estado: "GESTIONADO"
             }));
 
-            // 2. Agregar productos del maestro que faltan (PENDIENTES)
             dataMaestro.forEach(m => {
                 if (!codigosRegistrados.includes(String(m.cod))) {
                     rows.push({
@@ -192,6 +235,12 @@
         .btn-success { background: var(--success); }
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; }
         .search-input:focus { border-color: var(--primary); }
+        .btn-action-delete { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 5px 10px; transition: transform 0.1s; }
+        .btn-action-delete:hover { transform: scale(1.2); }
+        .section-title-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .section-title-container h3 { margin: 0; }
+        .btn-copy-excel { background: #15803d; color: white; border: none; padding: 8px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
+        .btn-copy-excel:hover { background: #166534; }
     </style>
 </head>
 <body>
@@ -225,12 +274,17 @@
 
     <div class="main-grid">
         <div class="section">
-            <h3>Monitoreo operador</h3>
+            <div class="section-title-container">
+                <h3>Monitoreo operador</h3>
+                <button class="btn-copy-excel" onclick="copiarTablaExcel()">
+                    <i class="fa-solid fa-file-excel"></i> Copiar para Excel
+                </button>
+            </div>
             <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
             
             <div class="scroll">
                 <table>
-                    <thead><tr><th>Operadores</th><th>Código</th><th>Ubicación</th><th>Stock</th><th>Encontrados</th><th>Dif.</th></tr></thead>
+                    <thead><tr><th>Operadores</th><th>Código</th><th>Ubicación</th><th>Stock</th><th>Encontrados</th><th>Dif.</th><th style="text-align:center;">Acción</th></tr></thead>
                     <tbody id="bodyMonitor"></tbody>
                 </table>
             </div>
