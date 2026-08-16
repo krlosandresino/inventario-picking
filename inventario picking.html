@@ -28,14 +28,98 @@
         let usuarioActual = "";
         let registroIdCorte = null; 
 
+        // --- INICIO NUEVO: BEEP AUDITIVO AMIGABLE + VIBRACIÓN ---
+        window.emitirSonido = (tipo) => {
+            // Haptic Feedback (Vibración del teléfono)
+            if (navigator.vibrate) {
+                if (tipo === 'ok') {
+                    navigator.vibrate(50); // Vibración corta y rápida de éxito
+                } else {
+                    navigator.vibrate([100, 50, 100]); // Dos vibraciones de alerta para error
+                }
+            }
+
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                if (tipo === 'ok') {
+                    // Sonido amigable de éxito ("Ta-Ding" musical)
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(987.77, audioCtx.currentTime); // Primera nota (Si)
+                    osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08); // Segunda nota más alta (Mi)
+                    
+                    // Suavizar la entrada y salida del sonido para quitar lo robótico
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.1);
+                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                    
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.2);
+                } else {
+                    // Sonido suave de error (Tono descendente)
+                    osc.type = 'triangle'; // Forma de onda menos agresiva
+                    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.25);
+                    
+                    // Suavizar el error para que no lastime el oído
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.25);
+                    
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                }
+            } catch(e) { console.log("Audio no soportado"); }
+        };
+        // --- FIN NUEVO: BEEP AUDITIVO AMIGABLE + VIBRACIÓN ---
+
+        // --- INICIO NUEVO: WAKE LOCK (MANTENER PANTALLA ENCENDIDA) ---
+        let wakeLock = null;
+        const solicitarWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {
+                    console.log("WakeLock desactivado o no soportado:", err);
+                }
+            }
+        };
+        // Reactivar si el usuario minimiza el navegador y vuelve a entrar
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                solicitarWakeLock();
+            }
+        });
+        // --- FIN NUEVO: WAKE LOCK ---
+
         window.onload = () => {
-            const user = prompt("Ingrese su nombre:");
-            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
-            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+            document.getElementById('userOp').focus();
         };
 
-        window.eliminarItem = (path) => { 
-            if(confirm("¿Deseas eliminar este registro?")) {
+        window.iniciarSesionOp = () => {
+            const user = document.getElementById('userOp').value.trim();
+            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
+            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+            document.getElementById('loginOverlayOp').style.display = 'none';
+            
+            solicitarWakeLock();
+
+            if (document.getElementById('sectionPicking').style.display === 'block') {
+                document.getElementById('codigoBuscado').focus();
+            }
+        };
+
+        window.eliminarItem = (path, usuario = '', cod = '', cant = '') => { 
+            let mensaje = "¿Deseas eliminar este registro?";
+            if (usuario && cod && cant) {
+                mensaje = `¿DESEAS ELIMINAR EL REGISTRO DE ${usuario} EL CÓDIGO ${cod} Y CANTIDAD ${cant}?`;
+            }
+            if(confirm(mensaje)) {
                 remove(ref(db, path)); 
             }
         };
@@ -95,7 +179,7 @@
                         <td style="font-size:0.75rem; width: 40%;">${nombreCorto}</td>
                         <td style="font-weight:bold; width: 10%; text-align: right;">${item.cant}</td>
                         <td style="width: 10%; text-align: center;">
-                            <button style="border:none; background:none; cursor:pointer;" onclick="eliminarItem('registros/${key}')">🗑️</button>
+                            <button style="border:none; background:none; cursor:pointer;" onclick="eliminarItem('registros/${key}', '${item.usuario || ''}', '${item.cod}', '${item.cant}')">🗑️</button>
                         </td>
                     </tr>`;
                 } else {
@@ -110,7 +194,6 @@
             });
             tabla.innerHTML = html;
             
-            // Si el usuario ya tenía algo escrito en el buscador, aplicar el filtro tras renderizar
             if (tipo === 'ingresos') {
                 filtrarHistorial();
             }
@@ -118,7 +201,7 @@
 
         window.registrarEnNube = () => {
             const cant = document.getElementById('cantidadContada').value;
-            if (!cant) return;
+            if (!cant) { emitirSonido('error'); return; } 
             push(dbRefRegistros, {
                 cod: document.getElementById('codigoBuscado').value,
                 nom: document.getElementById('resNombre').innerText,
@@ -128,6 +211,7 @@
                 fecha: new Date().toLocaleString(),
                 usuario: usuarioActual 
             });
+            emitirSonido('ok'); 
             document.getElementById('codigoBuscado').value = "";
             document.getElementById('cantidadContada').value = "";
             document.getElementById('resultadoBusqueda').style.display = 'none';
@@ -138,13 +222,14 @@
             const cod = document.getElementById('fueracod').value.trim();
             const pos = document.getElementById('fuerapos').value.trim();
             const cant = document.getElementById('fueracant').value.trim();
-            if (!cod || !pos || !cant) { alert("Rellene todos los campos"); return; }
+            if (!cod || !pos || !cant) { emitirSonido('error'); alert("Rellene todos los campos"); return; }
             push(dbRefIncidencias, { 
                 comentario: `Cód: ${cod} | Ubi: ${pos} | Cant: ${cant}`, 
                 fecha: new Date().toLocaleString(),
                 usuario: usuarioActual,
                 detalles: { cod, pos, cant }
             });
+            emitirSonido('ok'); 
             document.getElementById('fueracod').value = ""; document.getElementById('fuerapos').value = ""; document.getElementById('fueracant').value = "";
             cerrarModal();
         };
@@ -166,14 +251,12 @@
             } else { document.getElementById('resultadoBusqueda').style.display = 'none'; }
         });
 
-        // Función local para filtrar las filas del historial por código
         window.filtrarHistorial = () => {
             const query = document.getElementById('buscarEnHistorial').value.trim();
             const filas = document.querySelectorAll('#cuerpoRegistros tr');
             filas.forEach(fila => {
                 const celdaCodigo = fila.querySelector('.codigo-celda');
                 if (celdaCodigo) {
-                    // Extrae el código puro ignorando la etiqueta <small> del usuario
                     const codigoTexto = celdaCodigo.childNodes[0].textContent.trim();
                     if (codigoTexto.includes(query)) {
                         fila.style.display = '';
@@ -207,9 +290,23 @@
             overflow-y: auto;  
             margin-top: 5px;
         }
+        /* --- NUEVO LOGIN OPERADOR --- */
+        #loginOverlayOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
+        .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
+        .login-card-op input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; text-align: center; }
+        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
     </style>
 </head>
 <body>
+
+<div id="loginOverlayOp">
+    <div class="login-card-op">
+        <h2>👤 Acceso Operador</h2>
+        <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off">
+        <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
+    </div>
+</div>
 
 <div class="container">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -262,6 +359,7 @@
 </div>
 
 <script>
+    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
     document.getElementById('cantidadContada').addEventListener('keydown', (e) => { if(e.key === 'Enter') registrarEnNube(); });
     document.getElementById('fueracod').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fuerapos').focus(); } });
     document.getElementById('fuerapos').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fueracant').focus(); } });
