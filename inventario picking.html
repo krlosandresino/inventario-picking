@@ -28,49 +28,64 @@
         let usuarioActual = "";
         let registroIdCorte = null; 
 
+        // --- INICIO NUEVO: MODO OSCURO (TEXTO) ---
+        window.toggleDarkMode = () => {
+            document.body.classList.toggle('dark-mode');
+            const btn = document.getElementById('btnDarkMode');
+            if (document.body.classList.contains('dark-mode')) {
+                btn.innerText = '☀️ Modo Claro';
+            } else {
+                btn.innerText = '🌙 Modo Oscuro';
+            }
+        };
+        // --- FIN NUEVO: MODO OSCURO (TEXTO) ---
+
+        // --- INICIO NUEVO: ZONA CIEGA (ALERTA DE CONEXIÓN) ---
+        window.addEventListener('offline', () => {
+            const statusLabel = document.getElementById('statusInv');
+            statusLabel.innerText = "⚠️ SIN CONEXIÓN";
+            statusLabel.style.color = "var(--danger)";
+            statusLabel.style.fontWeight = "bold";
+            statusLabel.classList.add('blinking-text');
+        });
+        window.addEventListener('online', () => {
+            const statusLabel = document.getElementById('statusInv');
+            statusLabel.innerText = "🛜📶 INVENTARIO EN LÍNEA";
+            statusLabel.style.color = "#666";
+            statusLabel.style.fontWeight = "normal";
+            statusLabel.classList.remove('blinking-text');
+        });
+        // --- FIN NUEVO: ZONA CIEGA ---
+
         // --- INICIO NUEVO: BEEP AUDITIVO AMIGABLE + VIBRACIÓN ---
         window.emitirSonido = (tipo) => {
-            // Haptic Feedback (Vibración del teléfono)
             if (navigator.vibrate) {
-                if (tipo === 'ok') {
-                    navigator.vibrate(50); // Vibración corta y rápida de éxito
-                } else {
-                    navigator.vibrate([100, 50, 100]); // Dos vibraciones de alerta para error
-                }
+                if (tipo === 'ok') { navigator.vibrate(50); } 
+                else { navigator.vibrate([100, 50, 100]); }
             }
-
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                
                 if (tipo === 'ok') {
-                    // Sonido amigable de éxito ("Ta-Ding" musical)
                     osc.type = 'sine';
-                    osc.frequency.setValueAtTime(987.77, audioCtx.currentTime); // Primera nota (Si)
-                    osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08); // Segunda nota más alta (Mi)
-                    
-                    // Suavizar la entrada y salida del sonido para quitar lo robótico
+                    osc.frequency.setValueAtTime(987.77, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08);
                     gain.gain.setValueAtTime(0, audioCtx.currentTime);
                     gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
                     gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.1);
                     gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
-                    
                     osc.start();
                     osc.stop(audioCtx.currentTime + 0.2);
                 } else {
-                    // Sonido suave de error (Tono descendente)
-                    osc.type = 'triangle'; // Forma de onda menos agresiva
+                    osc.type = 'triangle';
                     osc.frequency.setValueAtTime(300, audioCtx.currentTime);
                     osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.25);
-                    
-                    // Suavizar el error para que no lastime el oído
                     gain.gain.setValueAtTime(0, audioCtx.currentTime);
                     gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
                     gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.25);
-                    
                     osc.start();
                     osc.stop(audioCtx.currentTime + 0.25);
                 }
@@ -82,33 +97,23 @@
         let wakeLock = null;
         const solicitarWakeLock = async () => {
             if ('wakeLock' in navigator) {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                } catch (err) {
-                    console.log("WakeLock desactivado o no soportado:", err);
-                }
+                try { wakeLock = await navigator.wakeLock.request('screen'); } 
+                catch (err) { console.log("WakeLock desactivado o no soportado:", err); }
             }
         };
-        // Reactivar si el usuario minimiza el navegador y vuelve a entrar
         document.addEventListener('visibilitychange', async () => {
-            if (wakeLock !== null && document.visibilityState === 'visible') {
-                solicitarWakeLock();
-            }
+            if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
         });
         // --- FIN NUEVO: WAKE LOCK ---
 
-        window.onload = () => {
-            document.getElementById('userOp').focus();
-        };
+        window.onload = () => { document.getElementById('userOp').focus(); };
 
         window.iniciarSesionOp = () => {
             const user = document.getElementById('userOp').value.trim();
             usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
             document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
             document.getElementById('loginOverlayOp').style.display = 'none';
-            
             solicitarWakeLock();
-
             if (document.getElementById('sectionPicking').style.display === 'block') {
                 document.getElementById('codigoBuscado').focus();
             }
@@ -116,12 +121,8 @@
 
         window.eliminarItem = (path, usuario = '', cod = '', cant = '') => { 
             let mensaje = "¿Deseas eliminar este registro?";
-            if (usuario && cod && cant) {
-                mensaje = `¿DESEAS ELIMINAR EL REGISTRO DE ${usuario} EL CÓDIGO ${cod} Y CANTIDAD ${cant}?`;
-            }
-            if(confirm(mensaje)) {
-                remove(ref(db, path)); 
-            }
+            if (usuario && cod && cant) { mensaje = `¿DESEAS ELIMINAR EL REGISTRO DE ${usuario} EL CÓDIGO ${cod} Y CANTIDAD ${cant}?`; }
+            if(confirm(mensaje)) { remove(ref(db, path)); }
         };
 
         window.limpiarVistaVisual = () => {
@@ -152,7 +153,7 @@
             if (data) {
                 inventarioMaestro = Object.values(data);
                 document.getElementById('sectionPicking').style.display = 'block';
-                document.getElementById('statusInv').innerText = "🛜📶 INVENTARIO EN LÍNEA";
+                if(navigator.onLine) document.getElementById('statusInv').innerText = "🛜📶 INVENTARIO EN LÍNEA";
                 get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
             }
         });
@@ -194,9 +195,7 @@
             });
             tabla.innerHTML = html;
             
-            if (tipo === 'ingresos') {
-                filtrarHistorial();
-            }
+            if (tipo === 'ingresos') { filtrarHistorial(); }
         }
 
         window.registrarEnNube = () => {
@@ -258,21 +257,18 @@
                 const celdaCodigo = fila.querySelector('.codigo-celda');
                 if (celdaCodigo) {
                     const codigoTexto = celdaCodigo.childNodes[0].textContent.trim();
-                    if (codigoTexto.includes(query)) {
-                        fila.style.display = '';
-                    } else {
-                        fila.style.display = 'none';
-                    }
+                    if (codigoTexto.includes(query)) { fila.style.display = ''; } 
+                    else { fila.style.display = 'none'; }
                 }
             });
         };
     </script>
     <style>
         :root { --primary: #1a73e8; --danger: #d93025; --warning: #f9ab00; --success: #34a853; --bg: #f8f9fa; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; user-select: none; }
-        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; user-select: none; transition: background 0.3s, color 0.3s; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; transition: background 0.3s; }
         input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
-        .result-card { background: #f1f8ff; padding: 12px; border-radius: 8px; margin-top: 5px; }
+        .result-card { background: #f1f8ff; padding: 12px; border-radius: 8px; margin-top: 5px; transition: background 0.3s; }
         .ubicacion-valor { font-size: 2.2rem; font-weight: 800; color: var(--danger); text-align: center; display: block; }
         .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
         .btn-inc { background: var(--warning); color: black; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
@@ -285,17 +281,32 @@
         .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
 
-        .scrollable-table { 
-            max-height: 500px; 
-            overflow-y: auto;  
-            margin-top: 5px;
-        }
-        /* --- NUEVO LOGIN OPERADOR --- */
+        .scrollable-table { max-height: 500px; overflow-y: auto; margin-top: 5px; }
+        
         #loginOverlayOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
         .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
         .login-card-op input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; text-align: center; }
         .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        
+        @keyframes blink-animation { 50% { opacity: 0; } }
+        .blinking-text { animation: blink-animation 1s step-start infinite; }
+
+        /* --- INICIO NUEVO: ESTILOS MODO OSCURO --- */
+        .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; transition: all 0.3s; text-align: center; }
+        
+        body.dark-mode { --bg: #121212; color: #e0e0e0; }
+        body.dark-mode .container, body.dark-mode .modal-content, body.dark-mode .login-card-op { background: #1e1e1e; color: #e0e0e0; border: 1px solid #333; box-shadow: none; }
+        body.dark-mode input { background: #2d2d2d; border-color: #444; color: white; }
+        body.dark-mode .result-card { background: #2d2d2d; }
+        body.dark-mode th, body.dark-mode td { border-bottom: 1px solid #333; }
+        body.dark-mode .section-title { color: #bbb; border-bottom: 1px solid #333; }
+        body.dark-mode .btn-clear-view { background: #2d2d2d; border-color: #444; color: #ccc; }
+        body.dark-mode .login-card-op h2 { color: #e0e0e0; }
+        body.dark-mode td[style*="#666"], body.dark-mode small { color: #aaa !important; }
+        body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
+        body.dark-mode .progress-container { background: #333; }
+        /* --- FIN NUEVO: ESTILOS MODO OSCURO --- */
     </style>
 </head>
 <body>
@@ -310,8 +321,9 @@
 
 <div class="container">
     <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary);">👤 Op: -</span>
-        <small id="statusInv" style="font-size: 0.65rem; color: #666;">Conectando...</small>
+        <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary); flex: 1;">👤 Op: -</span>
+        <span class="btn-dark-mode" onclick="toggleDarkMode()" id="btnDarkMode">🌙 Modo Oscuro</span>
+        <small id="statusInv" style="font-size: 0.65rem; color: #666; transition: color 0.3s; flex: 1; text-align: right;">Conectando...</small>
     </div>
     <div class="progress-container"><div id="barrita" class="progress-bar"></div></div>
     <center><small id="textoAvance" style="font-size: 0.65rem;">Cargando...</small></center>

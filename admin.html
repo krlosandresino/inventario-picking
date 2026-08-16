@@ -70,20 +70,31 @@
                 agrupados[reg.cod].usuarios.add(reg.usuario);
             });
             const listaFinal = Object.values(agrupados).reverse();
+
+            // --- INICIO NUEVO: VARIABLES MINI DASHBOARD ---
+            let contCuadrados = 0;
+            let contFaltantes = 0;
+            let contSobrantes = 0;
+            // --- FIN NUEVO: VARIABLES MINI DASHBOARD ---
+
             document.getElementById('bodyMonitor').innerHTML = listaFinal.map(reg => {
                 const teo = parseFloat(reg.teorico || 0);
                 const fis = reg.cant;
                 const dif = fis - teo;
                 const colorDif = dif === 0 ? '#2ec4b6' : (dif < 0 ? '#e71d36' : '#4361ee');
                 
-                // --- INICIO NUEVO: SEMÁFORO ---
-                let bgFila = "";
-                if (dif < 0) bgFila = "#ffe5e5"; // Rojo suave (faltante)
-                else if (dif > 0) bgFila = "#fff4cc"; // Amarillo suave (sobrante)
-                // --- FIN NUEVO: SEMÁFORO ---
+                // --- INICIO NUEVO: CONTEO PARA MINI DASHBOARD ---
+                if (dif === 0) {
+                    contCuadrados++;
+                } else if (dif < 0) {
+                    contFaltantes++;
+                } else if (dif > 0) {
+                    contSobrantes++;
+                }
+                // --- FIN NUEVO: CONTEO PARA MINI DASHBOARD ---
 
                 return `
-                    <tr style="background-color: ${bgFila};">
+                    <tr>
                         <td><span class="user-pill">${Array.from(reg.usuarios).join(', ')}</span></td>
                         <td>${reg.cod}</td>
                         <td><b style="color:#4361ee">${reg.pos}</b></td>
@@ -97,6 +108,13 @@
                         </td>
                     </tr>`;
             }).join('');
+            
+            // --- INICIO NUEVO: ACTUALIZAR MINI DASHBOARD VISUAL ---
+            document.getElementById('countCuadrados').innerText = contCuadrados;
+            document.getElementById('countFaltantes').innerText = contFaltantes;
+            document.getElementById('countSobrantes').innerText = contSobrantes;
+            // --- FIN NUEVO: ACTUALIZAR MINI DASHBOARD VISUAL ---
+
             document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
             ejecutarFiltro();
         }
@@ -248,6 +266,14 @@
         .section-title-container h3 { margin: 0; }
         .btn-copy-excel { background: #15803d; color: white; border: none; padding: 8px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
         .btn-copy-excel:hover { background: #166534; }
+        
+        /* --- INICIO NUEVO: ESTILOS MINI DASHBOARD --- */
+        .mini-dashboard { display: flex; gap: 10px; margin-bottom: 15px; }
+        .mini-card { flex: 1; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.85rem; }
+        .mc-cuadrados { background: #e6f9f7; color: var(--success); border: 1px solid #c0f0eb; }
+        .mc-faltantes { background: #ffe5e5; color: var(--danger); border: 1px solid #ffcccc; }
+        .mc-sobrantes { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
+        /* --- FIN NUEVO: ESTILOS MINI DASHBOARD --- */
     </style>
 </head>
 <body>
@@ -287,6 +313,15 @@
                     <i class="fa-solid fa-file-excel"></i> Copiar para Excel
                 </button>
             </div>
+            
+            <!-- --- INICIO NUEVO: HTML MINI DASHBOARD --- -->
+            <div class="mini-dashboard">
+                <div class="mini-card mc-cuadrados">✅ Cuadrados: <span id="countCuadrados">0</span></div>
+                <div class="mini-card mc-faltantes">⬇️ Faltantes: <span id="countFaltantes">0</span></div>
+                <div class="mini-card mc-sobrantes">⬆️ Sobrantes: <span id="countSobrantes">0</span></div>
+            </div>
+            <!-- --- FIN NUEVO: HTML MINI DASHBOARD --- -->
+
             <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
             
             <div class="scroll">
