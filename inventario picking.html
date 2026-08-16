@@ -114,6 +114,12 @@
             document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
             document.getElementById('loginOverlayOp').style.display = 'none';
             solicitarWakeLock();
+            
+            // Forzar actualización visual para aplicar el filtro de usuario inmediatamente
+            get(dbRefRegistros).then((snapshot) => {
+                renderizadoOptimizado(snapshot.val(), 'cuerpoRegistros', 'ingresos');
+            });
+
             if (document.getElementById('sectionPicking').style.display === 'block') {
                 document.getElementById('codigoBuscado').focus();
             }
@@ -126,7 +132,9 @@
         };
 
         window.limpiarVistaVisual = () => {
-            if(confirm("¿Limpiar historial visual?")) {
+            // --- INICIO ACTUALIZADO: MENSAJE ACLARATORIO ---
+            if(confirm("¿Limpiar tu historial visual en esta pantalla? (No borra datos del servidor)")) {
+            // --- FIN ACTUALIZADO: MENSAJE ACLARATORIO ---
                 get(dbRefRegistros).then((snapshot) => {
                     const data = snapshot.val();
                     if (data) {
@@ -170,6 +178,11 @@
                 if (tipo === 'ingresos' && registroIdCorte && key <= registroIdCorte) return;
 
                 const item = data[key];
+                
+                // --- INICIO NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL ---
+                if (tipo === 'ingresos' && item.usuario !== usuarioActual && usuarioActual !== "") return;
+                // --- FIN NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL ---
+
                 if (tipo === 'ingresos') {
                     const nombreOriginal = item.nom || '';
                     const nombreCorto = nombreOriginal.length > 20 ? nombreOriginal.substring(0, 20) + '...' : nombreOriginal;
@@ -343,7 +356,7 @@
 </div>
 
 <div class="container">
-    <div class="section-title">📝 HISTORIAL</div>
+    <div class="section-title">📝 MIS CONTEOS</div>
     <input type="text" id="buscarEnHistorial" oninput="filtrarHistorial()" inputmode="numeric" placeholder="🔍 Buscar códigos registrados..." autocomplete="off" style="padding: 8px; font-size: 0.85rem; margin-bottom: 5px;">
     <div class="scrollable-table">
         <table><tbody id="cuerpoRegistros"></tbody></table>

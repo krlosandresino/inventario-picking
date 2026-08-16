@@ -228,14 +228,47 @@
             }
         };
 
+        // --- INICIO NUEVO: LÓGICA DE FILTROS POR ESTADO ---
+        let filtroEstadoGlobal = 'todos';
+
+        window.setFiltroEstado = (estado) => {
+            // Si se hace clic en el mismo estado que ya está activo, se quita el filtro
+            filtroEstadoGlobal = filtroEstadoGlobal === estado ? 'todos' : estado; 
+            
+            // Efecto visual: atenúa las tarjetas que no están seleccionadas
+            document.querySelectorAll('.mini-card').forEach(c => c.style.opacity = '1');
+            if (filtroEstadoGlobal !== 'todos') {
+                document.querySelectorAll('.mini-card').forEach(c => {
+                    if (!c.classList.contains('mc-' + estado)) c.style.opacity = '0.4';
+                });
+            }
+            ejecutarFiltro();
+        };
+
         window.ejecutarFiltro = () => {
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
             const filas = document.querySelectorAll('#bodyMonitor tr');
+            
             filas.forEach(fila => {
                 const textoFila = fila.innerText.toLowerCase();
-                fila.style.display = textoFila.includes(term) ? "" : "none";
+                
+                // Evaluar condición del filtro de estado (tarjetas)
+                let cumpleEstado = true;
+                if (filtroEstadoGlobal !== 'todos') {
+                    const celdas = fila.querySelectorAll('td');
+                    if (celdas.length >= 6) {
+                        const dif = parseFloat(celdas[5].innerText) || 0;
+                        if (filtroEstadoGlobal === 'cuadrados' && dif !== 0) cumpleEstado = false;
+                        if (filtroEstadoGlobal === 'faltantes' && dif >= 0) cumpleEstado = false;
+                        if (filtroEstadoGlobal === 'sobrantes' && dif <= 0) cumpleEstado = false;
+                    }
+                }
+
+                // Muestra la fila solo si cumple la búsqueda de texto Y el filtro de la tarjeta
+                fila.style.display = (textoFila.includes(term) && cumpleEstado) ? "" : "none";
             });
         };
+        // --- FIN NUEVO: LÓGICA DE FILTROS POR ESTADO ---
     </script>
     <style>
         :root { --primary: #4361ee; --bg: #f4f7fe; --danger: #e71d36; --success: #2ec4b6; --warning: #f9ab00; }
@@ -314,13 +347,13 @@
                 </button>
             </div>
             
-            <!-- --- INICIO NUEVO: HTML MINI DASHBOARD --- -->
+            <!-- --- INICIO ACTUALIZADO: HTML MINI DASHBOARD CON FILTROS --- -->
             <div class="mini-dashboard">
-                <div class="mini-card mc-cuadrados">✅ Cuadrados: <span id="countCuadrados">0</span></div>
-                <div class="mini-card mc-faltantes">⬇️ Faltantes: <span id="countFaltantes">0</span></div>
-                <div class="mini-card mc-sobrantes">⬆️ Sobrantes: <span id="countSobrantes">0</span></div>
+                <div class="mini-card mc-cuadrados" onclick="setFiltroEstado('cuadrados')" style="cursor:pointer; transition: opacity 0.3s;" title="Filtrar Cuadrados">✅ Cuadrados: <span id="countCuadrados">0</span></div>
+                <div class="mini-card mc-faltantes" onclick="setFiltroEstado('faltantes')" style="cursor:pointer; transition: opacity 0.3s;" title="Filtrar Faltantes">⬇️ Faltantes: <span id="countFaltantes">0</span></div>
+                <div class="mini-card mc-sobrantes" onclick="setFiltroEstado('sobrantes')" style="cursor:pointer; transition: opacity 0.3s;" title="Filtrar Sobrantes">⬆️ Sobrantes: <span id="countSobrantes">0</span></div>
             </div>
-            <!-- --- FIN NUEVO: HTML MINI DASHBOARD --- -->
+            <!-- --- FIN ACTUALIZADO: HTML MINI DASHBOARD CON FILTROS --- -->
 
             <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
             
