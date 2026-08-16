@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Operarios - Reconteo</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+            authDomain: "inventariopicking.firebaseapp.com",
+            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+            projectId: "inventariopicking",
+            storageBucket: "inventariopicking.firebasestorage.app",
+            messagingSenderId: "92946062722",
+            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        
+        // Referencias independientes
+        const dbRefMaestro = ref(db, 'maestro');
+        const dbRefRegistros1 = ref(db, 'registros'); // Primer conteo (solo lectura)
+        const dbRefReconteo = ref(db, 'registros_reconteo'); // Segundo conteo (escritura)
+
+        let inventarioMaestro = {};
+        let conteo1Agrupado = {};
+        let reconteoAgrupado = {};
+        let usuarioActual = "";
+        let itemSeleccionado = null;
+
+        // --- MODO OSCURO ---
+        window.toggleDarkMode = () => {
+            document.body.classList.toggle('dark-mode');
+            const btn = document.getElementById('btnDarkMode');
+            btn.innerText = document.body.classList.contains('dark-mode') ? '☀️ Modo Claro' : '🌙 Modo Oscuro';
+        };
+
+        // --- ZONA CIEGA ---
+        window.addEventListener('offline', () => {
+            document.getElementById('statusInv').innerText = "⚠️ SIN CONEXIÓN";
+            document.getElementById('statusInv').style.color = "var(--danger)";
+        });
+        window.addEventListener('online', () => {
+            document.getElementById('statusInv').innerText = "🛜📶 EN LÍNEA";
+            document.getElementById('statusInv').style.color = "#666";
+        });
+
+        // --- WAKE LOCK ---
+        let wakeLock = null;
+        const solicitarWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
+            }
+        };
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
+        });
+
+        window.onload = () => { document.getElementById('userOp').focus(); };
+
+        window.iniciarSesionOp = () => {
+            const user = document.getElementById('userOp').value.trim();
+            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
+            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+            document.getElementById('loginOverlayOp').style.display = 'none';
+            solicitarWakeLock();
+        };
+
+        // --- LECTURA DE BASES DE DATOS ---
+        onValue(dbRefMaestro, (snap) => {
+            const data = snap.val() || [];
+            inventarioMaestro = {};
+            data.forEach(item => { if(item.cod) inventarioMaestro[item.cod] = item; });
+            calcularPendientes();
+        });
+
+        onValue(dbRefRegistros1, (snap) => {
+            const data = snap.val() || {};
+            conteo1Agrupado = {};
+            for (let k in data) {
+                let cod = data[k].cod;
+                if (!conteo1Agrupado[cod]) conteo1Agrupado[cod] = 0;
+                conteo1Agrupado[cod] += parseFloat(data[k].cant || 0);
+            }
+            calcularPendientes();
+        });
+
+        onValue(dbRefReconteo, (snap) => {
+            const data = snap.val() || {};
+            reconteoAgrupado = {};
+            for (let k in data) {
+                let cod = data[k].cod;
+                reconteoAgrupado[cod] = true; // Solo necesitamos saber si ya fue recontado
+            }
+            calcularPendientes();
+        });
+
+        function calcularPendientes() {
+            if (Object.keys(inventarioMaestro).length === 0) return;
+            const listaDescuadrados = [];
+
+            // Evaluamos todos los códigos contados en el primer conteo
+            for (let cod in conteo1Agrupado) {
+                let fisico1 = conteo1Agrupado[cod];
+                let maestroItem = inventarioMaestro[cod];
+                
+                if (maestroItem) {
+                    let teorico = parseFloat(maestroItem.stock || 0);
+                    // Si hay descuadre y AÚN NO ha sido recontado en la nueva base
+                    if (fisico1 !== teorico && !reconteoAgrupado[cod]) {
+                        listaDescuadrados.push({
+                            cod: cod, pos: maestroItem.pos, nom: maestroItem.nom
+                        });
+                    }
+                }
+            }
+
+            listaDescuadrados.sort((a, b) => a.pos.localeCompare(b.pos));
+            document.getElementById('totalDescuadres').innerText = `Pendientes: ${listaDescuadrados.length}`;
+            
+            let html = "";
+            if(listaDescuadrados.length === 0) {
+                html = `<div style="text-align:center; padding: 20px; color: var(--success); font-weight: bold;">🎉 ¡No hay reconteos pendientes!</div>`;
+            } else {
+                listaDescuadrados.forEach((item) => {
+                    const objStr = encodeURIComponent(JSON.stringify(item));
+                    html += `
+                    <div class="card-reconteo" onclick="abrirReconteo('${objStr}')">
+                        <div class="ubicacion-protagonista">${item.pos}</div>
+                        <div class="detalle-reconteo">
+                            <span style="font-weight:bold; color:var(--primary); font-size:1.1rem;">${item.cod}</span><br>
+                            <span style="font-size:0.75rem; color:#666;" class="nom-corto">${item.nom.length > 30 ? item.nom.substring(0,30)+'...' : item.nom}</span>
+                        </div>
+                        <div class="icon-accion">➡️</div>
+                    </div>`;
+                });
+            }
+            document.getElementById('listaReconteo').innerHTML = html;
+        }
+
+        window.abrirReconteo = (objStr) => {
+            itemSeleccionado = JSON.parse(decodeURIComponent(objStr));
+            document.getElementById('modalReconteo').style.display = 'flex';
+            document.getElementById('recUbicacion').innerText = itemSeleccionado.pos;
+            document.getElementById('recCodigo').innerText = itemSeleccionado.cod;
+            
+            const input = document.getElementById('cantidadReconteo');
+            input.value = ""; input.focus();
+        };
+
+        window.cerrarModalReconteo = () => { document.getElementById('modalReconteo').style.display = 'none'; itemSeleccionado = null; };
+
+        window.guardarReconteo = () => {
+            const cant = document.getElementById('cantidadReconteo').value;
+            if (!cant || !itemSeleccionado) { alert("Ingrese cantidad"); return; } 
+            
+            // Se guarda en la NUEVA base (registros_reconteo), sin tocar el primer conteo
+            push(dbRefReconteo, {
+                cod: itemSeleccionado.cod,
+                nom: itemSeleccionado.nom,
+                pos: itemSeleccionado.pos,
+                cant: cant, 
+                fecha: new Date().toLocaleString(),
+                usuario: usuarioActual
+            });
+
+            cerrarModalReconteo();
+        };
+    </script>
+    <style>
+        :root { --primary: #1a73e8; --danger: #d93025; --success: #34a853; --bg: #f8f9fa; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; user-select: none; transition: background 0.3s, color 0.3s; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top:10px; }
+        .section-title { font-size: 0.9rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 5px; display:flex; justify-content:space-between;}
+        
+        .card-reconteo { background: #f1f8ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 15px; cursor: pointer; border: 1px solid #e2e8f0; }
+        .ubicacion-protagonista { background: var(--danger); color: white; font-size: 1.5rem; font-weight: 900; padding: 10px 15px; border-radius: 8px; min-width: 70px; text-align: center; }
+        .detalle-reconteo { flex: 1; display: flex; flex-direction: column; }
+        .icon-accion { font-size: 1.2rem; color: var(--primary); }
+
+        #loginOverlayOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
+        .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
+        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 15px;}
+        
+        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); display:none; justify-content:center; align-items:center; z-index:100; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 350px; text-align: center; }
+        .modal-ubicacion { font-size: 3rem; font-weight: 900; color: var(--danger); margin: 10px 0; }
+
+        .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; }
+        body.dark-mode { --bg: #121212; color: #e0e0e0; }
+        body.dark-mode .container, body.dark-mode .modal-content, body.dark-mode .login-card-op { background: #1e1e1e; color: #e0e0e0; border: 1px solid #333; }
+        body.dark-mode input { background: #2d2d2d; border-color: #444; color: white; text-align: center; }
+        body.dark-mode .section-title { color: #bbb; border-bottom: 1px solid #333; }
+        body.dark-mode .login-card-op h2 { color: #e0e0e0; }
+        body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
+        body.dark-mode .card-reconteo { background: #242424; border-color: #333; }
+        body.dark-mode .nom-corto { color: #aaa !important; }
+    </style>
+</head>
+<body>
+
+<div id="loginOverlayOp">
+    <div class="login-card-op">
+        <h2>🔍 Reconteo de Picking</h2>
+        <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off" style="text-align: center;">
+        <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
+    </div>
+</div>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary); flex: 1;">👤 Op: -</span>
+        <span class="btn-dark-mode" onclick="toggleDarkMode()" id="btnDarkMode">🌙 Modo Oscuro</span>
+        <small id="statusInv" style="font-size: 0.65rem; color: #666; flex: 1; text-align: right;">Conectado...</small>
+    </div>
+</div>
+
+<div class="container" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+    <div class="section-title">
+        <span>⚠️ CÓDIGOS A RECONTAR</span>
+        <span id="totalDescuadres" style="color:var(--danger)">Cargando...</span>
+    </div>
+    <div style="margin-top: 10px; font-size: 0.75rem; color: #666; text-align: center; margin-bottom: 10px;">
+        Dirígete a la ubicación y vuelve a contar.
+    </div>
+    <div id="listaReconteo" style="overflow-y: auto; flex: 1; padding-bottom: 10px;"></div>
+</div>
+
+<div class="modal" id="modalReconteo">
+    <div class="modal-content">
+        <div style="font-size: 0.85rem; color: #666; font-weight: bold;">UBICACION</div>
+        <div class="modal-ubicacion" id="recUbicacion"></div>
+        <div id="recCodigo" style="font-size: 1.2rem; font-weight: bold; color: var(--primary);"></div>
+        
+        <input type="number" id="cantidadReconteo" inputmode="numeric" placeholder="¿Cuánto encontraste?" style="text-align: center; font-size: 1.2rem; padding: 15px; margin-top:15px;">
+        
+        <div style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn-main" onclick="guardarReconteo()">GUARDAR</button>
+            <button class="btn-main" style="background:#666" onclick="cerrarModalReconteo()">CANCELAR</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
+    document.getElementById('cantidadReconteo').addEventListener('keydown', (e) => { if(e.key === 'Enter') guardarReconteo(); });
+    document.addEventListener('contextmenu', event => event.preventDefault());
+</script>
+</body>
+</html>
