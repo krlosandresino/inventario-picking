@@ -75,8 +75,15 @@
                 const fis = reg.cant;
                 const dif = fis - teo;
                 const colorDif = dif === 0 ? '#2ec4b6' : (dif < 0 ? '#e71d36' : '#4361ee');
+                
+                // --- INICIO NUEVO: SEMÁFORO ---
+                let bgFila = "";
+                if (dif < 0) bgFila = "#ffe5e5"; // Rojo suave (faltante)
+                else if (dif > 0) bgFila = "#fff4cc"; // Amarillo suave (sobrante)
+                // --- FIN NUEVO: SEMÁFORO ---
+
                 return `
-                    <tr>
+                    <tr style="background-color: ${bgFila};">
                         <td><span class="user-pill">${Array.from(reg.usuarios).join(', ')}</span></td>
                         <td>${reg.cod}</td>
                         <td><b style="color:#4361ee">${reg.pos}</b></td>
