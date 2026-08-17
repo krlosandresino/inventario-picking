@@ -148,7 +148,7 @@
         // --- NUEVO: COPIAR TABLA A EXCEL ---
         window.copiarTablaExcel = () => {
             const filas = document.querySelectorAll('#bodyMonitor tr');
-            let textoCopiar = "Código\tUbicación\tTeórico Maestro\t1er Conteo\tReconteo Final\tDif. Final\tOperador Reconteo\n";
+            let textoCopiar = "Código\tUbicación\tStock\t1er Conteo\tReconteo Final\tDif. Final\tOperador Reconteo\n";
             
             filas.forEach(fila => {
                 if (fila.style.display !== "none") {
@@ -169,7 +169,7 @@
             });
 
             navigator.clipboard.writeText(textoCopiar).then(() => {
-                alert("¡Tabla copiada! Ya puedes pegarla en Excel.");
+                alert("¡Tabla copiada! Ya puedes pegarla.");
             }).catch(err => {
                 alert("Error al copiar los datos: " + err);
             });
