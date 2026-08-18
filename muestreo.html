@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👤 Operarios</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyClp2tVcoeIE_ZOedIzP6zyEXEoP9Em0tM",
+            authDomain: "chatpareja-3fbce.firebaseapp.com",
+            databaseURL: "https://chatpareja-3fbce-default-rtdb.firebaseio.com",
+            projectId: "chatpareja-3fbce",
+            storageBucket: "chatpareja-3fbce.firebasestorage.app",
+            messagingSenderId: "954583350974",
+            appId: "1:954583350974:web:5d082025be24961dd728ef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const dbRefRegistros = ref(db, 'registros');
+        const dbRefMaestro = ref(db, 'maestro');
+
+        let inventarioMaestro = [];
+        let usuarioActual = "";
+
+        // --- MODO OSCURO ---
+        window.toggleDarkMode = () => {
+            document.body.classList.toggle('dark-mode');
+            const btn = document.getElementById('btnDarkMode');
+            if (document.body.classList.contains('dark-mode')) {
+                btn.innerText = '☀️ Modo Claro';
+            } else {
+                btn.innerText = '🌙 Modo Oscuro';
+            }
+        };
+
+        // --- ZONA CIEGA (ALERTA DE CONEXIÓN) ---
+        window.addEventListener('offline', () => {
+            const statusLabel = document.getElementById('statusInv');
+            statusLabel.innerText = "⚠️ SIN CONEXIÓN";
+            statusLabel.style.color = "var(--danger)";
+            statusLabel.style.fontWeight = "bold";
+            statusLabel.classList.add('blinking-text');
+        });
+        window.addEventListener('online', () => {
+            const statusLabel = document.getElementById('statusInv');
+            statusLabel.innerText = "🛜📶 INVENTARIO EN LÍNEA";
+            statusLabel.style.color = "#666";
+            statusLabel.style.fontWeight = "normal";
+            statusLabel.classList.remove('blinking-text');
+        });
+
+        // --- BEEP AUDITIVO ---
+        window.emitirSonido = (tipo) => {
+            if (navigator.vibrate) {
+                if (tipo === 'ok') { navigator.vibrate(50); } 
+                else { navigator.vibrate([100, 50, 100]); }
+            }
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                if (tipo === 'ok') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(987.77, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.1);
+                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.2);
+                } else {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                }
+            } catch(e) { console.log("Audio no soportado"); }
+        };
+
+        // --- WAKE LOCK ---
+        let wakeLock = null;
+        const solicitarWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } 
+                catch (err) { console.log("WakeLock desactivado o no soportado:", err); }
+            }
+        };
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
+        });
+
+        window.onload = () => { document.getElementById('userOp').focus(); };
+
+        window.iniciarSesionOp = () => {
+            const user = document.getElementById('userOp').value.trim();
+            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
+            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+            document.getElementById('loginOverlayOp').style.display = 'none';
+            solicitarWakeLock();
+            
+            get(dbRefRegistros).then((snapshot) => actualizarDashboard(snapshot.val()));
+        };
+
+        function actualizarDashboard(registros) {
+            if (!inventarioMaestro.length) return;
+            const codigosContados = new Set(Object.values(registros || {}).map(r => r.cod));
+            const totalMaestro = inventarioMaestro.length;
+            const avance = codigosContados.size;
+            const porcentaje = Math.round((avance / totalMaestro) * 100);
+            document.getElementById('barrita').style.width = porcentaje + "%";
+            document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
+        }
+
+        onValue(dbRefMaestro, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                inventarioMaestro = Object.values(data).sort((a, b) => {
+                    return (a.pos || '').toString().localeCompare((b.pos || '').toString());
+                });
+                
+                document.getElementById('sectionPicking').style.display = 'block';
+                if(navigator.onLine) document.getElementById('statusInv').innerText = "🛜📶 INVENTARIO EN LÍNEA";
+                get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
+                renderizarListaMaestro();
+            } else {
+                inventarioMaestro = [];
+                document.getElementById('listaMaestro').innerHTML = "";
+                document.getElementById('sectionPicking').style.display = 'none';
+            }
+        });
+
+        onValue(dbRefRegistros, (snap) => actualizarDashboard(snap.val()));
+
+        // --- RENDERIZADO VISUALIZACIÓN MÓVIL OPTIMIZADA ---
+        window.renderizarListaMaestro = () => {
+            const contenedor = document.getElementById('listaMaestro');
+            let html = "";
+            inventarioMaestro.forEach((item, index) => {
+                const nombreOriginal = item.nom || '';
+                const nombreCorto = nombreOriginal.length > 25 ? nombreOriginal.substring(0, 25) + '...' : nombreOriginal;
+                const nomLimpio = nombreOriginal.replace(/['"]/g, ''); 
+                
+                html += `
+                <div class="result-card rc-wrapper">
+                    <div class="rc-info-col">
+                        <div class="rc-cod-row">
+                            <span class="rc-cod">${item.cod}</span>
+                            <span class="rc-pos">${item.pos}</span>
+                        </div>
+                        <span class="nombre-movil" style="font-size:0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${nombreCorto}</span>
+                    </div>
+                    <div class="rc-actions">
+                        <input type="text" id="cant_${index}" inputmode="numeric" placeholder="Cant." 
+                            class="rc-input"
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                            onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this.nextElementSibling)">
+                        <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this)" class="btn-main rc-btn">💾</button>
+                    </div>
+                </div>`;
+            });
+            contenedor.innerHTML = html;
+        };
+
+        window.registrarItemMaestro = (cod, nom, pos, teorico, inputId, btnEl) => {
+            const inputEl = document.getElementById(inputId);
+            const cant = inputEl.value;
+            if (!cant) { emitirSonido('error'); return; } 
+            
+            // --- INICIO PREVENCIÓN DOBLE TOQUE ---
+            if (inputEl.disabled) return; 
+            inputEl.disabled = true;
+            inputEl.style.opacity = '0.5';
+            if (btnEl) {
+                btnEl.disabled = true;
+                btnEl.style.opacity = '0.5';
+            }
+            // --- FIN PREVENCIÓN ---
+            
+            push(dbRefRegistros, {
+                cod: cod,
+                nom: nom,
+                pos: pos,
+                cant: cant, 
+                teorico: teorico, 
+                fecha: new Date().toLocaleString(),
+                usuario: usuarioActual 
+            });
+            
+            emitirSonido('ok'); 
+            inputEl.value = ""; 
+
+            // --- RESTAURAR DESPUÉS DE 1.5 SEGUNDOS ---
+            setTimeout(() => {
+                inputEl.disabled = false;
+                inputEl.style.opacity = '1';
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.style.opacity = '1';
+                }
+            }, 1500);
+        };
+    </script>
+    <style>
+        :root { --primary: #1a73e8; --danger: #d93025; --success: #34a853; --bg: #f8f9fa; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; user-select: none; transition: background 0.3s, color 0.3s; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; transition: background 0.3s; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .result-card { background: #f1f8ff; border-radius: 8px; transition: background 0.3s; border: 1px solid #e1ecf4; }
+        .btn-main { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
+        .section-title { font-size: 0.8rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 10px; }
+        .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; }
+        .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
+        
+        #loginOverlayOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
+        .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
+        .login-card-op input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; text-align: center; }
+        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        
+        @keyframes blink-animation { 50% { opacity: 0; } }
+        .blinking-text { animation: blink-animation 1s step-start infinite; }
+
+        /* --- MODO OSCURO --- */
+        .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; transition: all 0.3s; text-align: center; }
+        
+        body.dark-mode { --bg: #121212; color: #e0e0e0; }
+        body.dark-mode .container, body.dark-mode .login-card-op { background: #1e1e1e; color: #e0e0e0; border: 1px solid #333; box-shadow: none; }
+        body.dark-mode input { background: #2d2d2d; border-color: #444; color: white; }
+        body.dark-mode .result-card { background: #2d2d2d; border-color: #333; }
+        body.dark-mode .section-title { color: #bbb; border-bottom: 1px solid #333; }
+        body.dark-mode .login-card-op h2 { color: #e0e0e0; }
+        body.dark-mode .nombre-movil { color: #aaa !important; }
+        body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
+        body.dark-mode .progress-container { background: #333; }
+
+        /* --- CLASES REFACTORIZADAS (Limpieza en línea) --- */
+        .rc-wrapper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; margin-bottom: 6px; }
+        .rc-info-col { display: flex; flex-direction: column; flex: 1; min-width: 150px; overflow: hidden; }
+        .rc-cod-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+        .rc-cod { font-size:1rem; font-weight:bold; }
+        .rc-pos { font-size:1.1rem; font-weight:900; color: var(--danger); }
+        .rc-actions { display: flex; align-items: center; gap: 6px; }
+        .rc-input { margin:0; padding: 10px 5px; width: 65px; font-size: 1rem; text-align: center; font-weight:bold; transition: opacity 0.3s; }
+        .rc-btn { padding: 10px 15px; width: auto; font-size: 0.9rem; border-radius: 6px; transition: opacity 0.3s; }
+    </style>
+</head>
+<body>
+
+<div id="loginOverlayOp">
+    <div class="login-card-op">
+        <h2>👤 Acceso Operador</h2>
+        <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off">
+        <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
+    </div>
+</div>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary); flex: 1;">👤 Op: -</span>
+        <span class="btn-dark-mode" onclick="toggleDarkMode()" id="btnDarkMode">🌙 Modo Oscuro</span>
+        <small id="statusInv" style="font-size: 0.65rem; color: #666; transition: color 0.3s; flex: 1; text-align: right;">Conectando...</small>
+    </div>
+    <div class="progress-container"><div id="barrita" class="progress-bar"></div></div>
+    <center><small id="textoAvance" style="font-size: 0.65rem;">Cargando...</small></center>
+    
+    <div id="sectionPicking" style="display:none; margin-top: 15px;">
+        <div class="section-title">📋 CODIGOS A INVENTARIAR</div>
+        <div id="listaMaestro" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+            </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
+    document.addEventListener('contextmenu', event => event.preventDefault());
+    document.addEventListener('keydown', function(e) {
+        if (e.keyCode === 123 || (e.ctrlKey && e.keyCode === 85) || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.shiftKey && e.keyCode === 74) || (e.ctrlKey && e.keyCode === 83)) {
+            e.preventDefault();
+            return false;
+        }
+    });
+</script>
+</body>
+</html>
