@@ -68,13 +68,45 @@
             });
             const userList = Array.from(userSet).sort();
             
+            // Obtener el usuario actualmente filtrado para mantener el sombreado si hay actualizaciones en tiempo real
+            const inputBusqueda = document.getElementById('busquedaRealTime');
+            const usuarioActual = inputBusqueda ? inputBusqueda.value : '';
+            
             document.getElementById('countUsuarios').innerText = userList.length;
-            document.getElementById('bodyUsuarios').innerHTML = userList.map(u => `
-                <tr>
+            document.getElementById('bodyUsuarios').innerHTML = userList.map(u => {
+                // Mantiene el estilo si el usuario ya está seleccionado
+                const isSelected = u === usuarioActual;
+                const estiloFondo = isSelected ? 'background-color: #eef2ff; box-shadow: inset 4px 0 0 var(--primary);' : '';
+                
+                return `
+                <tr class="row-usuario" data-usuario="${u}" style="cursor: pointer; transition: background 0.3s; ${estiloFondo}" onclick="filtrarPorUsuario('${u}')" title="Haz clic para filtrar los registros de ${u}">
                     <td style="padding: 15px; font-size: 1rem;"><b><i class="fa-solid fa-user" style="color: var(--primary); margin-right: 10px;"></i>${u}</b></td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
+
+        window.filtrarPorUsuario = (usuario) => {
+            const inputBusqueda = document.getElementById('busquedaRealTime');
+            
+            if (inputBusqueda.value === usuario) {
+                inputBusqueda.value = ''; // Si ya estaba seleccionado, lo borra para quitar el filtro
+            } else {
+                inputBusqueda.value = usuario; // Escribe el nombre en el buscador
+            }
+            
+            // Actualizar visualmente el sombreado de las filas
+            document.querySelectorAll('.row-usuario').forEach(row => {
+                if (row.getAttribute('data-usuario') === inputBusqueda.value && inputBusqueda.value !== '') {
+                    row.style.backgroundColor = '#eef2ff';
+                    row.style.boxShadow = 'inset 4px 0 0 var(--primary)';
+                } else {
+                    row.style.backgroundColor = '';
+                    row.style.boxShadow = '';
+                }
+            });
+
+            ejecutarFiltro(); // Dispara la función de filtrado existente
+        };
 
         function procesarDatosMonitor() {
             const listaRaw = Object.values(registrosGlobales);
