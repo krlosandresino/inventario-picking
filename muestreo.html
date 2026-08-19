@@ -233,7 +233,9 @@
         .result-card { background: #f1f8ff; border-radius: 8px; transition: background 0.3s; border: 1px solid #e1ecf4; }
         .btn-main { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
         .section-title { font-size: 0.8rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 10px; }
-        .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; }
+        
+        /* FIX QUIRÚRGICO: flex-shrink: 0 evita que el scroll aplaste la barra de progreso */
+        .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; flex-shrink: 0; }
         .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
         
         #loginOverlayOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; }
@@ -267,6 +269,41 @@
         .rc-actions { display: flex; align-items: center; gap: 6px; }
         .rc-input { margin:0; padding: 10px 5px; width: 65px; font-size: 1rem; text-align: center; font-weight:bold; transition: opacity 0.3s; }
         .rc-btn { padding: 10px 15px; width: auto; font-size: 0.9rem; border-radius: 6px; transition: opacity 0.3s; }
+
+        /* --- INICIO: ENCABEZADO FIJO (Modificación Quirúrgica CSS) --- */
+        body {
+            height: 100dvh; /* dVH optimiza la altura en móviles con teclados virtuales */
+            overflow: hidden; /* Bloquea el scroll de la página completa */
+        }
+        .container {
+            max-height: calc(100dvh - 20px); /* Resta el padding del body */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Protegemos los elementos de la cabecera para que el Flex no los distorsione */
+        .container > div:first-child, .container > center { flex-shrink: 0; }
+
+        #sectionPicking {
+            flex-direction: column;
+            overflow: hidden;
+            margin-bottom: 5px; 
+        }
+        /* Interceptamos el cambio de estado del JavaScript sin tocar la lógica */
+        #sectionPicking[style*="display: block"] {
+            display: flex !important;
+        }
+        #listaMaestro {
+            overflow-y: auto !important; /* El scroll ocurre SOLO dentro de tu lista */
+            flex: 1 1 auto;
+            padding-right: 5px; /* Espacio para que el scroll no toque los botones */
+            padding-bottom: 15px; /* Margen para que la última tarjeta se vea completa */
+        }
+        /* Scrollbar estético y delgado para móviles */
+        #listaMaestro::-webkit-scrollbar { width: 4px; }
+        #listaMaestro::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+        body.dark-mode #listaMaestro::-webkit-scrollbar-thumb { background: #555; }
+        /* --- FIN: ENCABEZADO FIJO --- */
     </style>
 </head>
 <body>
