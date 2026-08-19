@@ -210,6 +210,20 @@
                 }
             }, 1500);
         };
+
+        // --- BUSCADOR DE CÓDIGOS (NUEVA FUNCIÓN) ---
+        window.filtrarCodigos = () => {
+            const filtro = document.getElementById('buscadorCodigo').value;
+            const tarjetas = document.querySelectorAll('.rc-wrapper');
+            tarjetas.forEach(tarjeta => {
+                const cod = tarjeta.querySelector('.rc-cod').innerText;
+                if (cod.includes(filtro)) {
+                    tarjeta.style.display = 'flex';
+                } else {
+                    tarjeta.style.display = 'none';
+                }
+            });
+        };
     </script>
     <style>
         :root { --primary: #1a73e8; --danger: #d93025; --success: #34a853; --bg: #f8f9fa; }
@@ -276,6 +290,12 @@
     
     <div id="sectionPicking" style="display:none; margin-top: 15px;">
         <div class="section-title">📋 CODIGOS A INVENTARIAR</div>
+        
+        <!-- BUSCADOR DE CÓDIGO (NUEVO ELEMENTO) -->
+        <input type="text" id="buscadorCodigo" inputmode="numeric" placeholder="🔍 Buscar código..." 
+            oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarCodigos()" 
+            style="margin-bottom: 8px;">
+
         <div id="listaMaestro" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
             </div>
     </div>
