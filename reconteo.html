@@ -216,6 +216,7 @@
                 fecha: new Date().toLocaleString(),
                 usuario: usuarioActual
             }).then(() => {
+                if (navigator.vibrate) navigator.vibrate(100); // NUEVO: Confirmación por vibración
                 mostrarToast(`✅ ${itemSeleccionado.cod} guardado (${cantStr} unds)`);
                 cerrarModalReconteo();
             }).catch((error) => {
