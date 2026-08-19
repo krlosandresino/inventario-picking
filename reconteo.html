@@ -45,7 +45,7 @@
             document.getElementById('statusInv').style.color = "var(--danger)";
         });
         window.addEventListener('online', () => {
-            document.getElementById('statusInv').innerText = "🛜📶 EN LÍNEA";
+            document.getElementById('statusInv').innerText = "🛜📶 INVENTARIO EN LINEA";
             document.getElementById('statusInv').style.color = "#666";
         });
 
@@ -122,24 +122,60 @@
             listaDescuadrados.sort((a, b) => a.pos.localeCompare(b.pos));
             document.getElementById('totalDescuadres').innerText = `Pendientes: ${listaDescuadrados.length}`;
             
-            let html = "";
+            // --- OPTIMIZACIÓN DOM ---
+            const contenedorLista = document.getElementById('listaReconteo');
+            contenedorLista.innerHTML = ''; // Limpiar contenedor
+            
             if(listaDescuadrados.length === 0) {
-                html = `<div style="text-align:center; padding: 20px; color: var(--success); font-weight: bold;">¡No hay reconteos pendientes!</div>`;
+                const divVacio = document.createElement('div');
+                divVacio.style.cssText = "text-align:center; padding: 20px; color: var(--success); font-weight: bold;";
+                divVacio.innerText = "¡No hay reconteos pendientes!";
+                contenedorLista.appendChild(divVacio);
             } else {
+                const fragment = document.createDocumentFragment(); // Optimización: Crear fragmento en memoria
+                
                 listaDescuadrados.forEach((item) => {
                     const objStr = encodeURIComponent(JSON.stringify(item));
-                    html += `
-                    <div class="card-reconteo" onclick="abrirReconteo('${objStr}')">
-                        <div class="ubicacion-protagonista">${item.pos}</div>
-                        <div class="detalle-reconteo">
-                            <span style="font-weight:bold; color:var(--primary); font-size:1.1rem;">${item.cod}</span><br>
-                            <span style="font-size:0.75rem; color:#666;" class="nom-corto">${item.nom.length > 30 ? item.nom.substring(0,30)+'...' : item.nom}</span>
-                        </div>
-                        <div class="icon-accion">➡️</div>
-                    </div>`;
+                    
+                    const card = document.createElement('div');
+                    card.className = 'card-reconteo';
+                    card.onclick = () => abrirReconteo(objStr);
+                    
+                    const divUbic = document.createElement('div');
+                    divUbic.className = 'ubicacion-protagonista';
+                    divUbic.innerText = item.pos;
+                    
+                    const divDetalle = document.createElement('div');
+                    divDetalle.className = 'detalle-reconteo';
+                    
+                    const spanCod = document.createElement('span');
+                    spanCod.style.cssText = "font-weight:bold; color:var(--primary); font-size:1.1rem;";
+                    spanCod.innerText = item.cod;
+                    
+                    const br = document.createElement('br');
+                    
+                    const spanNom = document.createElement('span');
+                    spanNom.className = 'nom-corto';
+                    spanNom.style.cssText = "font-size:0.75rem; color:#666;";
+                    spanNom.innerText = item.nom.length > 30 ? item.nom.substring(0,30)+'...' : item.nom;
+                    
+                    divDetalle.appendChild(spanCod);
+                    divDetalle.appendChild(br);
+                    divDetalle.appendChild(spanNom);
+                    
+                    const divIcon = document.createElement('div');
+                    divIcon.className = 'icon-accion';
+                    divIcon.innerText = '➡️';
+                    
+                    card.appendChild(divUbic);
+                    card.appendChild(divDetalle);
+                    card.appendChild(divIcon);
+                    
+                    fragment.appendChild(card);
                 });
+                
+                contenedorLista.appendChild(fragment); // Inserción única al DOM
             }
-            document.getElementById('listaReconteo').innerHTML = html;
         }
 
         window.abrirReconteo = (objStr) => {
@@ -154,21 +190,55 @@
 
         window.cerrarModalReconteo = () => { document.getElementById('modalReconteo').style.display = 'none'; itemSeleccionado = null; };
 
+        // --- VALIDACIÓN DE INPUTS Y PROMESA FIREBASE ---
         window.guardarReconteo = () => {
-            const cant = document.getElementById('cantidadReconteo').value;
-            if (!cant || !itemSeleccionado) { alert("Ingrese cantidad"); return; } 
+            const inputElement = document.getElementById('cantidadReconteo');
+            const cantStr = inputElement.value;
+            const cant = parseFloat(cantStr);
+
+            if (!cantStr || !itemSeleccionado) { 
+                alert("Ingrese cantidad"); 
+                return; 
+            }
+            if (isNaN(cant) || cant < 0) { 
+                alert("Por favor, ingrese un número válido mayor o igual a cero."); 
+                inputElement.value = "";
+                inputElement.focus();
+                return; 
+            } 
             
-            // Se guarda en la NUEVA base (registros_reconteo), sin tocar el primer conteo
+            // Se guarda en la NUEVA base (registros_reconteo), capturando el éxito (Promesa)
             push(dbRefReconteo, {
                 cod: itemSeleccionado.cod,
                 nom: itemSeleccionado.nom,
                 pos: itemSeleccionado.pos,
-                cant: cant, 
+                cant: cantStr, 
                 fecha: new Date().toLocaleString(),
                 usuario: usuarioActual
+            }).then(() => {
+                mostrarToast(`✅ ${itemSeleccionado.cod} guardado (${cantStr} unds)`);
+                cerrarModalReconteo();
+            }).catch((error) => {
+                alert("Error al guardar en Firebase. Revisa tu conexión.");
             });
+        };
 
-            cerrarModalReconteo();
+        // --- FUNCIÓN PARA EL TOAST ---
+        window.mostrarToast = (mensaje) => {
+            const toast = document.getElementById("toast");
+            toast.innerText = mensaje;
+            toast.className = "show";
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+        };
+
+        // --- NUEVO: Función para filtrar la lista en el DOM ---
+        window.filtrarLista = () => {
+            const texto = document.getElementById('buscadorReconteo').value.toUpperCase();
+            const tarjetas = document.querySelectorAll('.card-reconteo');
+            tarjetas.forEach(tarjeta => {
+                const contenido = tarjeta.innerText.toUpperCase();
+                tarjeta.style.display = contenido.includes(texto) ? 'flex' : 'none';
+            });
         };
     </script>
     <style>
@@ -202,6 +272,38 @@
         body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
         body.dark-mode .card-reconteo { background: #242424; border-color: #333; }
         body.dark-mode .nom-corto { color: #aaa !important; }
+
+        /* --- ESTILOS PARA EL TOAST --- */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: var(--success);
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 12px;
+            position: fixed;
+            z-index: 2000;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            font-size: 1rem;
+            font-weight: bold;
+            box-shadow: 0px 4px 6px rgba(0,0,0,0.2);
+            transition: opacity 0.3s linear;
+            opacity: 0;
+        }
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* --- NUEVO: Encabezado fijo (Sticky) --- */
+        body > .container:nth-of-type(1) {
+            position: sticky;
+            top: 10px;
+            z-index: 50;
+        }
     </style>
 </head>
 <body>
@@ -218,7 +320,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
         <span id="displayUsuario" style="font-size: 0.75rem; font-weight: bold; color: var(--primary); flex: 1;">👤 Op: -</span>
         <span class="btn-dark-mode" onclick="toggleDarkMode()" id="btnDarkMode">🌙 Modo Oscuro</span>
-        <small id="statusInv" style="font-size: 0.65rem; color: #666; flex: 1; text-align: right;">Conectado...</small>
+        <small id="statusInv" style="font-size: 0.65rem; color: #666; flex: 1; text-align: right;">🛜📶 INVENTARIO EN LINEA</small>
     </div>
 </div>
 
@@ -227,6 +329,10 @@
         <span>⚠️ CÓDIGOS A RECONTAR</span>
         <span id="totalDescuadres" style="color:var(--danger)">Cargando...</span>
     </div>
+    
+    <!-- NUEVO: Buscador en vivo (MODIFICADO SOLO PARA NÚMEROS Y TECLADO NUMÉRICO) -->
+    <input type="text" inputmode="numeric" id="buscadorReconteo" placeholder="🔍 Buscar ubicación o código..." oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarLista();" style="margin-top: 10px; font-size: 0.85rem; padding: 8px;">
+
     <div style="margin-top: 10px; font-size: 0.75rem; color: #666; text-align: center; margin-bottom: 10px;">
         Dirígete a la ubicación y vuelve a contar.
     </div>
@@ -247,6 +353,9 @@
         </div>
     </div>
 </div>
+
+<!-- Contenedor del Toast -->
+<div id="toast"></div>
 
 <script>
     document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
