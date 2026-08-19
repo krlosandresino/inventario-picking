@@ -249,8 +249,8 @@
         .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top:10px; }
         .section-title { font-size: 0.9rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 5px; display:flex; justify-content:space-between;}
         
-        .card-reconteo { background: #f1f8ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 15px; cursor: pointer; border: 1px solid #e2e8f0; }
-        .ubicacion-protagonista { background: var(--danger); color: white; font-size: 1.5rem; font-weight: 900; padding: 10px 15px; border-radius: 8px; min-width: 70px; text-align: center; }
+        .card-reconteo { background: #f1f8ff; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; cursor: pointer; border: 1px solid #e2e8f0; }
+        .ubicacion-protagonista { background: var(--danger); color: white; font-size: 1.2rem; font-weight: 900; padding: 6px 10px; border-radius: 6px; min-width: 60px; text-align: center; }
         .detalle-reconteo { flex: 1; display: flex; flex-direction: column; }
         .icon-accion { font-size: 1.2rem; color: var(--primary); }
 
@@ -331,7 +331,7 @@
     </div>
     
     <!-- NUEVO: Buscador en vivo (MODIFICADO SOLO PARA NÚMEROS Y TECLADO NUMÉRICO) -->
-    <input type="text" inputmode="numeric" id="buscadorReconteo" placeholder="🔍 Buscar ubicación o código..." oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarLista();" style="margin-top: 10px; font-size: 0.85rem; padding: 8px;">
+    <input type="text" inputmode="numeric" id="buscadorReconteo" placeholder="🔍 Buscar código..." oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarLista();" style="margin-top: 10px; font-size: 0.85rem; padding: 8px;">
 
     <div style="margin-top: 10px; font-size: 0.75rem; color: #666; text-align: center; margin-bottom: 10px;">
         Dirígete a la ubicación y vuelve a contar.
