@@ -321,25 +321,52 @@
 
         // --- INICIO NUEVO: FUNCIONES DEL MODAL DE ESTADÍSTICAS ---
         window.abrirModalEstadisticas = () => {
-            const conteo = {};
-            // Procesamos la variable global para contar los SKUs por operador
+            const agrupados = {};
+            const stats = {};
+
+            // 1. Agrupar registros por código para saber estado final (igual que el monitor)
             Object.values(rawRegistrosGlobal).forEach(reg => {
-                if(reg.usuario) {
-                    conteo[reg.usuario] = (conteo[reg.usuario] || 0) + 1;
+                if (!agrupados[reg.cod]) {
+                    agrupados[reg.cod] = { teo: parseFloat(reg.teorico || 0), fis: 0, usuarios: new Set() };
+                }
+                agrupados[reg.cod].fis += parseFloat(reg.cant || 0);
+                if (reg.usuario) agrupados[reg.cod].usuarios.add(reg.usuario);
+            });
+
+            // 2. Inicializar los contadores por operador
+            Object.values(rawRegistrosGlobal).forEach(reg => {
+                if (reg.usuario && !stats[reg.usuario]) {
+                    stats[reg.usuario] = { procesados: 0, cuadrados: 0, faltantes: 0, sobrantes: 0 };
                 }
             });
+
+            // 3. Asignar los resultados a los operadores que trabajaron en el SKU
+            Object.values(agrupados).forEach(item => {
+                const dif = item.fis - item.teo;
+                item.usuarios.forEach(user => {
+                    if (stats[user]) {
+                        stats[user].procesados++;
+                        if (dif === 0) stats[user].cuadrados++;
+                        else if (dif < 0) stats[user].faltantes++;
+                        else if (dif > 0) stats[user].sobrantes++;
+                    }
+                });
+            });
             
-            // Ordenar de mayor a menor rendimiento
-            const ordenado = Object.entries(conteo).sort((a, b) => b[1] - a[1]);
+            // 4. Ordenar de mayor a menor rendimiento
+            const ordenado = Object.entries(stats).sort((a, b) => b[1].procesados - a[1].procesados);
             
             document.getElementById('bodyEstadisticas').innerHTML = ordenado.length > 0 
-                ? ordenado.map(([user, count]) => `
+                ? ordenado.map(([user, data]) => `
                     <tr>
                         <td style="padding:12px; border-bottom:1px solid #f0f0f0;"><b>${user}</b></td>
-                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--primary); font-weight:bold;">${count}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--primary); font-weight:bold;">${data.procesados}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--success); font-weight:bold;">${data.cuadrados}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--danger); font-weight:bold;">${data.faltantes}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--warning); font-weight:bold;">${data.sobrantes}</td>
                     </tr>
                 `).join('')
-                : '<tr><td colspan="2" style="text-align:center; padding:20px; color:#888;">No hay datos registrados aún.</td></tr>';
+                : '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No hay datos registrados aún.</td></tr>';
                 
             document.getElementById('modalEstadisticas').style.display = 'flex';
         };
@@ -469,7 +496,7 @@
 
 <!-- INICIO NUEVO: HTML ESTRUCTURA DEL MODAL DE ESTADÍSTICAS -->
 <div id="modalEstadisticas" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
-    <div style="background:white; padding:25px; border-radius:15px; width:400px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+    <div style="background:white; padding:25px; border-radius:15px; width:550px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
             <h2 style="margin:0;">📊 Productividad</h2>
             <button onclick="cerrarModalEstadisticas()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
@@ -479,7 +506,10 @@
                 <thead>
                     <tr>
                         <th style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem;">Operador</th>
-                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">SKUs Procesados</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">Procesados</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">✅ Cuad.</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">⬇️ Falt.</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">⬆️ Sobr.</th>
                     </tr>
                 </thead>
                 <tbody id="bodyEstadisticas">
