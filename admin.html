@@ -45,6 +45,9 @@
         onValue(dbRefMaestro, (snapshot) => {
             dataMaestro = snapshot.val() || [];
             document.getElementById('totalMaestro').innerText = dataMaestro.length;
+            
+            // Esta línea fuerza a que se recalculen los pendientes al subir el Excel
+            renderMonitorAgrupado(rawRegistrosGlobal); 
         });
 
         onValue(dbRefRegistros, (snapshot) => {
@@ -233,7 +236,7 @@
                 const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
                 const nuevoMaestro = rawRows.slice(1).map(f => ({ cod: String(f[0]||''), nom: String(f[1]||''), pos: String(f[2]||''), stock: parseFloat(f[3])||0 })).filter(i => i.cod !== "");
                 await set(dbRefMaestro, nuevoMaestro);
-                alert("Inventario cargado");
+                alert("Inventario cargado y actualizado");
             };
         };
 
