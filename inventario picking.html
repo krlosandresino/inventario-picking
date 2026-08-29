@@ -115,9 +115,12 @@
             document.getElementById('loginOverlayOp').style.display = 'none';
             solicitarWakeLock();
             
-            // Forzar actualización visual para aplicar el filtro de usuario inmediatamente
+            // Forzar actualización visual para aplicar el filtro de usuario inmediatamente en ambas tablas
             get(dbRefRegistros).then((snapshot) => {
                 renderizadoOptimizado(snapshot.val(), 'cuerpoRegistros', 'ingresos');
+            });
+            get(dbRefIncidencias).then((snapshot) => {
+                renderizadoOptimizado(snapshot.val(), 'cuerpoIncidencias', 'incidencias');
             });
 
             if (document.getElementById('sectionPicking').style.display === 'block') {
@@ -179,9 +182,9 @@
 
                 const item = data[key];
                 
-                // --- INICIO NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL ---
-                if (tipo === 'ingresos' && item.usuario !== usuarioActual && usuarioActual !== "") return;
-                // --- FIN NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL ---
+                // --- INICIO NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL EN AMBAS TABLAS ---
+                if (item.usuario !== usuarioActual && usuarioActual !== "") return;
+                // --- FIN NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL EN AMBAS TABLAS ---
 
                 if (tipo === 'ingresos') {
                     const nombreOriginal = item.nom || '';

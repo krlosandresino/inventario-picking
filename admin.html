@@ -56,13 +56,21 @@
         });
 
         onValue(dbRefIncidencias, (snapshot) => {
-            const lista = Object.values(snapshot.val() || {}).reverse();
+            const datos = snapshot.val() || {};
+            // Mapeamos para obtener la 'key' de Firebase necesaria para borrar el registro individual
+            const lista = Object.keys(datos).map(key => ({ key: key, ...datos[key] })).reverse();
+            
             document.getElementById('countInc').innerText = lista.length;
             document.getElementById('bodyIncidencias').innerHTML = lista.map(inc => `
                 <tr>
                     <td style="width:20%; color:#888;">${inc.fecha.split(',')[1] || inc.fecha}</td>
                     <td><b>${inc.usuario}</b></td>
                     <td style="color:#e71d36; font-weight:bold">${inc.comentario}</td>
+                    <td align="center" style="width:10%;">
+                        <button class="btn-action-delete" onclick="eliminarIncidencia('${inc.key}')" title="Eliminar alerta">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
                 </tr>
             `).join('');
         });
@@ -150,6 +158,12 @@
                     }
                 }
                 alert(`Registros del código ${codigo} eliminados.`);
+            }
+        };
+
+        window.eliminarIncidencia = async (key) => {
+            if(confirm(`¿Deseas eliminar esta alerta de fuera de stock?`)) {
+                await remove(ref(db, `incidencias_global/${key}`));
             }
         };
 
@@ -445,7 +459,7 @@
             <h3>Alertas Fuera de Stock</h3>
             <div class="scroll">
                 <table>
-                    <thead><tr><th>Hora</th><th>Op.</th><th>Reporte</th></tr></thead>
+                    <thead><tr><th>Hora</th><th>Op.</th><th>Reporte</th><th style="text-align:center;">Acción</th></tr></thead>
                     <tbody id="bodyIncidencias"></tbody>
                 </table>
             </div>
