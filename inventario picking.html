@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>👤 Operarios</title>
     <script type="module">
+        // Se agregó 'set' en la importación para poder guardar la batería
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, onValue, remove, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        import { getDatabase, ref, push, onValue, remove, get, set } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -105,6 +106,26 @@
             if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
         });
         // --- FIN NUEVO: WAKE LOCK ---
+        
+        // --- INICIO NUEVO: FUNCIÓN PARA LEER Y ENVIAR BATERÍA ---
+        window.iniciarMonitorBateria = (nombreUsuario) => {
+            if ('getBattery' in navigator) {
+                navigator.getBattery().then(function(battery) {
+                    function actualizarBateriaEnFirebase() {
+                        if (nombreUsuario && nombreUsuario !== "ANÓNIMO") {
+                            set(ref(db, 'baterias_operarios/' + nombreUsuario.toUpperCase()), {
+                                nivel: battery.level,
+                                cargando: battery.charging
+                            });
+                        }
+                    }
+                    actualizarBateriaEnFirebase();
+                    battery.addEventListener('levelchange', actualizarBateriaEnFirebase);
+                    battery.addEventListener('chargingchange', actualizarBateriaEnFirebase);
+                });
+            }
+        };
+        // --- FIN NUEVO: FUNCIÓN PARA LEER Y ENVIAR BATERÍA ---
 
         window.onload = () => { document.getElementById('userOp').focus(); };
 
@@ -114,6 +135,12 @@
             document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
             document.getElementById('loginOverlayOp').style.display = 'none';
             solicitarWakeLock();
+            
+            // --- NUEVO: LLAMAR A LA BATERÍA AL INICIAR SESIÓN ---
+            if (usuarioActual !== "ANÓNIMO") {
+                window.iniciarMonitorBateria(usuarioActual);
+            }
+            // ----------------------------------------------------
             
             // Forzar actualización visual para aplicar el filtro de usuario inmediatamente en ambas tablas
             get(dbRefRegistros).then((snapshot) => {

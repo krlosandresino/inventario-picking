@@ -26,9 +26,12 @@
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
         const dbRefIncidencias = ref(db, 'incidencias_global');
+        
+        const dbRefBateria = ref(db, 'baterias_operarios');
 
         let dataMaestro = [];
-        let rawRegistrosGlobal = {}; // Variable global para alimentar las estadísticas del modal
+        let rawRegistrosGlobal = {}; 
+        let bateriasGlobal = {}; 
 
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
@@ -46,7 +49,6 @@
             dataMaestro = snapshot.val() || [];
             document.getElementById('totalMaestro').innerText = dataMaestro.length;
             
-            // Esta línea fuerza a que se recalculen los pendientes al subir el Excel
             renderMonitorAgrupado(rawRegistrosGlobal); 
         });
 
@@ -55,9 +57,15 @@
             renderMonitorAgrupado(rawRegistrosGlobal);
         });
 
+        onValue(dbRefBateria, (snapshot) => {
+            bateriasGlobal = snapshot.val() || {};
+            if(Object.keys(rawRegistrosGlobal).length > 0) {
+                renderMonitorAgrupado(rawRegistrosGlobal);
+            }
+        });
+
         onValue(dbRefIncidencias, (snapshot) => {
             const datos = snapshot.val() || {};
-            // Mapeamos para obtener la 'key' de Firebase necesaria para borrar el registro individual
             const lista = Object.keys(datos).map(key => ({ key: key, ...datos[key] })).reverse();
             
             document.getElementById('countInc').innerText = lista.length;
@@ -78,7 +86,6 @@
         function renderMonitorAgrupado(registros) {
             const listaRaw = Object.values(registros);
             
-            // Obtenemos los usuarios únicos para los filtros visuales (Limpios, sin números)
             const setUsuariosUnicos = new Set();
             listaRaw.forEach(reg => {
                 if(reg.usuario) setUsuariosUnicos.add(reg.usuario);
@@ -90,7 +97,20 @@
                 ? arrUsuariosUnicos.map(u => {
                     const isSelected = filtroUsuarioGlobal === u;
                     const opacity = (filtroUsuarioGlobal === 'todos' || isSelected) ? '1' : '0.4';
-                    return `<span class="user-pill user-filter-btn" onclick="setFiltroUsuario('${u}')" style="cursor:pointer; transition: opacity 0.3s; opacity: ${opacity};" title="Filtrar por ${u}">${u}</span>`;
+                    
+                    let infoBateria = '';
+                    
+                    // Ajuste para que encuentre el usuario sin importar mayúsculas o minúsculas
+                    const keyBateria = Object.keys(bateriasGlobal).find(k => String(k).toUpperCase() === String(u).toUpperCase());
+
+                    if(keyBateria && bateriasGlobal[keyBateria]) {
+                        const nivel = Math.round(bateriasGlobal[keyBateria].nivel * 100);
+                        const icono = bateriasGlobal[keyBateria].cargando ? '⚡' : (nivel <= 20 ? '🪫' : '🔋');
+                        const colorTexto = nivel <= 20 ? '#e71d36' : '#666'; 
+                        infoBateria = `<span style="font-size:0.75rem; color:${colorTexto}; margin-left:6px; font-weight:normal;">${icono} ${nivel}%</span>`;
+                    }
+
+                    return `<span class="user-pill user-filter-btn" onclick="setFiltroUsuario('${u}')" style="cursor:pointer; transition: opacity 0.3s; opacity: ${opacity};" title="Filtrar por ${u}">${u}${infoBateria}</span>`;
                 }).join('')
                 : '<span style="color:#888; font-size:0.85rem;">Ningún usuario registrado aún</span>';
 
@@ -281,7 +301,7 @@
                 if (filtroUsuarioGlobal === 'todos') {
                     btn.style.opacity = '1';
                 } else {
-                    btn.style.opacity = btn.innerText.trim() === filtroUsuarioGlobal ? '1' : '0.4';
+                    btn.style.opacity = btn.innerText.toUpperCase().startsWith(filtroUsuarioGlobal.toUpperCase()) ? '1' : '0.4';
                 }
             });
             ejecutarFiltro();
@@ -307,9 +327,8 @@
                     }
 
                     if (filtroUsuarioGlobal !== 'todos') {
-                        const operadoresText = celdas[0].innerText;
-                        const listaOperadores = operadoresText.split(',').map(op => op.trim());
-                        if (!listaOperadores.includes(filtroUsuarioGlobal)) {
+                        const operadoresText = celdas[0].innerText.toUpperCase();
+                        if (!operadoresText.includes(filtroUsuarioGlobal.toUpperCase())) {
                             cumpleUsuario = false;
                         }
                     }
@@ -319,12 +338,10 @@
             });
         };
 
-        // --- INICIO NUEVO: FUNCIONES DEL MODAL DE ESTADÍSTICAS ---
         window.abrirModalEstadisticas = () => {
             const agrupados = {};
             const stats = {};
 
-            // 1. Agrupar registros por código para saber estado final (igual que el monitor)
             Object.values(rawRegistrosGlobal).forEach(reg => {
                 if (!agrupados[reg.cod]) {
                     agrupados[reg.cod] = { teo: parseFloat(reg.teorico || 0), fis: 0, usuarios: new Set() };
@@ -333,14 +350,12 @@
                 if (reg.usuario) agrupados[reg.cod].usuarios.add(reg.usuario);
             });
 
-            // 2. Inicializar los contadores por operador
             Object.values(rawRegistrosGlobal).forEach(reg => {
                 if (reg.usuario && !stats[reg.usuario]) {
                     stats[reg.usuario] = { procesados: 0, cuadrados: 0, faltantes: 0, sobrantes: 0 };
                 }
             });
 
-            // 3. Asignar los resultados a los operadores que trabajaron en el SKU
             Object.values(agrupados).forEach(item => {
                 const dif = item.fis - item.teo;
                 item.usuarios.forEach(user => {
@@ -353,7 +368,6 @@
                 });
             });
             
-            // 4. Ordenar de mayor a menor rendimiento
             const ordenado = Object.entries(stats).sort((a, b) => b[1].procesados - a[1].procesados);
             
             document.getElementById('bodyEstadisticas').innerHTML = ordenado.length > 0 
@@ -374,7 +388,6 @@
         window.cerrarModalEstadisticas = () => {
             document.getElementById('modalEstadisticas').style.display = 'none';
         };
-        // --- FIN NUEVO: FUNCIONES DEL MODAL DE ESTADÍSTICAS ---
 
     </script>
     <style>
@@ -394,12 +407,12 @@
         table { width: 100%; border-collapse: collapse; }
         th { position: sticky; top: 0; background: #f9fafb; padding: 15px; text-align: left; color: #777; border-bottom: 2px solid #eee; font-size: 0.8rem; }
         td { padding: 15px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
-        .user-pill { background: #eef2ff; color: var(--primary); padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 0.75rem; }
+        .user-pill { background: #eef2ff; color: var(--primary); padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 0.75rem; display: inline-block; }
         .user-filter-btn:hover { background: #d0d7ff; } 
         .btn-blue { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .btn-danger { background: var(--danger); }
         .btn-success { background: var(--success); }
-        .btn-purple { background: #6366f1; } /* Color diferenciador para productividad */
+        .btn-purple { background: #6366f1; } 
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; }
         .search-input:focus { border-color: var(--primary); }
         .btn-action-delete { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 5px 10px; transition: transform 0.1s; }
@@ -432,9 +445,7 @@
     <div class="header">
         <h1 style="margin:0;">🛠️ Gestión Inventario Picking</h1>
         <div style="display:flex; gap:10px;">
-            <!-- INICIO NUEVO: Botón de Modal Estadístico -->
             <button class="btn-blue btn-purple" onclick="abrirModalEstadisticas()">📊 VER PRODUCTIVIDAD</button>
-            <!-- FIN NUEVO: Botón de Modal Estadístico -->
             <button class="btn-blue" onclick="document.getElementById('inputExcel').click()">CARGAR INVENTARIO</button>
             <button class="btn-blue btn-success" onclick="exportarExcelTotal()">DESCARGAR REPORTE</button>
             <button class="btn-blue btn-danger" onclick="borrarHistorial()">REINICIAR SISTEMA</button>
@@ -494,7 +505,6 @@
     </div>
 </div>
 
-<!-- INICIO NUEVO: HTML ESTRUCTURA DEL MODAL DE ESTADÍSTICAS -->
 <div id="modalEstadisticas" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
     <div style="background:white; padding:25px; border-radius:15px; width:550px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -513,13 +523,11 @@
                     </tr>
                 </thead>
                 <tbody id="bodyEstadisticas">
-                    <!-- Filas generadas dinámicamente -->
                 </tbody>
             </table>
         </div>
     </div>
 </div>
-<!-- FIN NUEVO: HTML ESTRUCTURA DEL MODAL DE ESTADÍSTICAS -->
 
 <script>
     document.getElementById('userLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('passLog').focus(); });
