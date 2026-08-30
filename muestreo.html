@@ -311,7 +311,7 @@
 <div id="loginOverlayOp">
     <div class="login-card-op">
         <h2>👤 Acceso Operador</h2>
-        <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off">
+        <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off" oninput="this.value = this.value.toUpperCase()">
         <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
     </div>
 </div>
