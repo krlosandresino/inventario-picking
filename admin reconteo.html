@@ -259,6 +259,10 @@
             document.getElementById('st-gen-falt').innerText = `${generalStats.falt} (${calcPct(generalStats.falt, generalStats.total)}%)`;
             document.getElementById('st-gen-sobr').innerText = `${generalStats.sobr} (${calcPct(generalStats.sobr, generalStats.total)}%)`;
 
+            // Calcular y mostrar ERI% Final
+            const eriValue = calcPct(generalStats.cuad, generalStats.total);
+            document.getElementById('st-eri-final').innerText = `${eriValue}%`;
+
             ejecutarFiltro(); 
         }
 
@@ -500,8 +504,14 @@
     </div>
 
     <div class="section">
-        <!-- NUEVO BLOQUE DE ESTADÍSTICAS DE PRECISIÓN -->
-        <h3 style="margin-top: 0; margin-bottom: 15px; color: #333;">Estadísticas de Precisión Global</h3>
+        <!-- NUEVO BLOQUE DE ESTADÍSTICAS DE PRECISIÓN CON ERI -->
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #333; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+            Estadísticas de Precisión Global
+            <span style="background: var(--success); color: white; padding: 4px 15px; border-radius: 20px; font-size: 0.95rem; font-weight: bold; box-shadow: 0 2px 4px rgba(46,196,182,0.3);">
+                ERI Final: <span id="st-eri-final">0.0%</span>
+            </span>
+        </h3>
+        
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 25px;">
             <!-- Admin -->
             <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
