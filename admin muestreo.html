@@ -25,10 +25,11 @@
         const db = getDatabase(app);
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
+        const dbRefBateria = ref(db, 'baterias_operarios');
 
         let dataMaestro = [];
+        let bateriasGlobal = {};
 
-        // --- VARIABLES DE OPTIMIZACIÓN Y LAZY LOADING ---
         let debounceTimer;
         let registrosGlobales = {};
         let listaAgrupadaGlobal = [];
@@ -48,16 +49,20 @@
         onValue(dbRefMaestro, (snapshot) => {
             dataMaestro = snapshot.val() || [];
             document.getElementById('totalMaestro').innerText = dataMaestro.length;
-            
-            // Esta línea fuerza a que se recalculen los pendientes al subir el Excel
             procesarDatosMonitor();
+        });
+
+        onValue(dbRefBateria, (snapshot) => {
+            bateriasGlobal = snapshot.val() || {};
+            if(Object.keys(registrosGlobales).length > 0) {
+                renderUsuarios(registrosGlobales);
+            }
         });
 
         onValue(dbRefRegistros, (snapshot) => {
             registrosGlobales = snapshot.val() || {};
             renderUsuarios(registrosGlobales);
             
-            // Debounce: Evita congelamientos si entran muchos datos de golpe
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 procesarDatosMonitor();
@@ -71,33 +76,42 @@
             });
             const userList = Array.from(userSet).sort();
             
-            // Obtener el usuario actualmente filtrado para mantener el sombreado si hay actualizaciones en tiempo real
             const inputBusqueda = document.getElementById('busquedaRealTime');
             const usuarioActual = inputBusqueda ? inputBusqueda.value : '';
             
             document.getElementById('countUsuarios').innerText = userList.length;
             document.getElementById('bodyUsuarios').innerHTML = userList.map(u => {
-                // Mantiene el estilo si el usuario ya está seleccionado
                 const isSelected = u === usuarioActual;
                 const estiloFondo = isSelected ? 'background-color: #eef2ff; box-shadow: inset 4px 0 0 var(--primary);' : '';
                 
+                let infoBateria = '';
+                const keyBateria = Object.keys(bateriasGlobal).find(k => String(k).toUpperCase() === String(u).toUpperCase());
+
+                if(keyBateria && bateriasGlobal[keyBateria]) {
+                    const nivel = Math.round(bateriasGlobal[keyBateria].nivel * 100);
+                    const icono = bateriasGlobal[keyBateria].cargando ? '⚡' : (nivel <= 20 ? '🪫' : '🔋');
+                    const colorTexto = nivel <= 20 ? '#e71d36' : '#666'; 
+                    infoBateria = `<span style="font-size:0.75rem; color:${colorTexto}; float:right; font-weight:normal; margin-top:2px;">${icono} ${nivel}%</span>`;
+                }
+
                 return `
                 <tr class="row-usuario" data-usuario="${u}" style="cursor: pointer; transition: background 0.3s; ${estiloFondo}" onclick="filtrarPorUsuario('${u}')" title="Haz clic para filtrar los registros de ${u}">
-                    <td style="padding: 15px; font-size: 1rem;"><b><i class="fa-solid fa-user" style="color: var(--primary); margin-right: 10px;"></i>${u}</b></td>
+                    <td style="padding: 15px; font-size: 1rem;">
+                        <b><i class="fa-solid fa-user" style="color: var(--primary); margin-right: 10px;"></i>${u}</b>
+                        ${infoBateria}
+                    </td>
                 </tr>
             `}).join('');
         }
 
         window.filtrarPorUsuario = (usuario) => {
             const inputBusqueda = document.getElementById('busquedaRealTime');
-            
             if (inputBusqueda.value === usuario) {
-                inputBusqueda.value = ''; // Si ya estaba seleccionado, lo borra para quitar el filtro
+                inputBusqueda.value = ''; 
             } else {
-                inputBusqueda.value = usuario; // Escribe el nombre en el buscador
+                inputBusqueda.value = usuario; 
             }
             
-            // Actualizar visualmente el sombreado de las filas
             document.querySelectorAll('.row-usuario').forEach(row => {
                 if (row.getAttribute('data-usuario') === inputBusqueda.value && inputBusqueda.value !== '') {
                     row.style.backgroundColor = '#eef2ff';
@@ -108,7 +122,7 @@
                 }
             });
 
-            ejecutarFiltro(); // Dispara la función de filtrado existente
+            ejecutarFiltro(); 
         };
 
         function procesarDatosMonitor() {
@@ -143,7 +157,6 @@
 
         window.copiarTablaExcel = () => {
             let textoCopiar = "Operadores\tCódigo\tUbicación\tStock\tEncontrados\tDif.\n";
-            // Extrae los datos de la matriz en memoria, no del DOM
             listaFiltradaGlobal.forEach(reg => {
                 const operadores = Array.from(reg.usuarios).join(', ');
                 const stock = parseFloat(reg.teorico || 0);
@@ -234,7 +247,6 @@
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
             let contCuadrados = 0, contFaltantes = 0, contSobrantes = 0;
 
-            // Filtramos el arreglo en memoria en lugar del DOM (Mucho más rápido)
             listaFiltradaGlobal = listaAgrupadaGlobal.filter(reg => {
                 const teo = parseFloat(reg.teorico || 0);
                 const fis = reg.cant;
@@ -259,7 +271,6 @@
             document.getElementById('countFaltantes').innerText = contFaltantes;
             document.getElementById('countSobrantes').innerText = contSobrantes;
 
-            // Reiniciar y cargar primera página
             itemsCargados = 0;
             document.getElementById('bodyMonitor').innerHTML = "";
             renderizarSiguientePagina();
@@ -295,7 +306,6 @@
             itemsCargados += itemsPorPagina;
         }
 
-        // Evento de scroll para Lazy Loading automático
         setTimeout(() => {
             const scrollContainers = document.querySelectorAll('.scroll');
             if(scrollContainers.length > 0) {
@@ -306,6 +316,57 @@
                 });
             }
         }, 300);
+
+        window.abrirModalEstadisticas = () => {
+            const agrupados = {};
+            const stats = {};
+
+            Object.values(registrosGlobales).forEach(reg => {
+                if (!agrupados[reg.cod]) {
+                    agrupados[reg.cod] = { teo: parseFloat(reg.teorico || 0), fis: 0, usuarios: new Set() };
+                }
+                agrupados[reg.cod].fis += parseFloat(reg.cant || 0);
+                if (reg.usuario) agrupados[reg.cod].usuarios.add(reg.usuario);
+            });
+
+            Object.values(registrosGlobales).forEach(reg => {
+                if (reg.usuario && !stats[reg.usuario]) {
+                    stats[reg.usuario] = { procesados: 0, cuadrados: 0, faltantes: 0, sobrantes: 0 };
+                }
+            });
+
+            Object.values(agrupados).forEach(item => {
+                const dif = item.fis - item.teo;
+                item.usuarios.forEach(user => {
+                    if (stats[user]) {
+                        stats[user].procesados++;
+                        if (dif === 0) stats[user].cuadrados++;
+                        else if (dif < 0) stats[user].faltantes++;
+                        else if (dif > 0) stats[user].sobrantes++;
+                    }
+                });
+            });
+            
+            const ordenado = Object.entries(stats).sort((a, b) => b[1].procesados - a[1].procesados);
+            
+            document.getElementById('bodyEstadisticas').innerHTML = ordenado.length > 0 
+                ? ordenado.map(([user, data]) => `
+                    <tr>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0;"><b>${user}</b></td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--primary); font-weight:bold;">${data.procesados}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--success); font-weight:bold;">${data.cuadrados}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--danger); font-weight:bold;">${data.faltantes}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--warning); font-weight:bold;">${data.sobrantes}</td>
+                    </tr>
+                `).join('')
+                : '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No hay datos registrados aún.</td></tr>';
+                
+            document.getElementById('modalEstadisticas').style.display = 'flex';
+        };
+
+        window.cerrarModalEstadisticas = () => {
+            document.getElementById('modalEstadisticas').style.display = 'none';
+        };
 
     </script>
     <style>
@@ -330,6 +391,7 @@
         .btn-blue:active { transform: scale(0.95); }
         .btn-danger { background: var(--danger); }
         .btn-success { background: var(--success); }
+        .btn-purple { background: #6366f1; } 
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; }
         .search-input:focus { border-color: var(--primary); }
         .btn-action-delete { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 5px 10px; transition: transform 0.1s; }
@@ -362,6 +424,7 @@
     <div class="header">
         <h1 style="margin:0;">🛠️ Gestión Inventario Muestreo</h1>
         <div style="display:flex; gap:10px;">
+            <button class="btn-blue btn-purple" onclick="abrirModalEstadisticas()">📊 VER PRODUCTIVIDAD</button>
             <button class="btn-blue" onclick="document.getElementById('inputExcel').click()">CARGAR INVENTARIO</button>
             <button class="btn-blue btn-success" onclick="exportarExcelTotal()">DESCARGAR REPORTE</button>
             <button class="btn-blue btn-danger" onclick="borrarHistorial()">REINICIAR SISTEMA</button>
@@ -406,6 +469,30 @@
                     <tbody id="bodyUsuarios"></tbody>
                 </table>
             </div>
+        </div>
+    </div>
+</div>
+
+<div id="modalEstadisticas" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
+    <div style="background:white; padding:25px; border-radius:15px; width:550px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0;">📊 Productividad</h2>
+            <button onclick="cerrarModalEstadisticas()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
+        </div>
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem;">Operador</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">Procesados</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">✅ Cuad.</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">⬇️ Falt.</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">⬆️ Sobr.</th>
+                    </tr>
+                </thead>
+                <tbody id="bodyEstadisticas">
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

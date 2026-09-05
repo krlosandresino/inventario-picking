@@ -36,6 +36,13 @@
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
 
+        // --- VARIABLES LAZY LOADING ---
+        let debounceTimer;
+        let listaAgrupadaGlobal = [];
+        let listaFiltradaGlobal = [];
+        let itemsCargados = 0;
+        const itemsPorPagina = 50;
+
         window.validarAcceso = () => {
             const user = document.getElementById('userLog').value.toLowerCase();
             const pass = document.getElementById('passLog').value;
@@ -48,19 +55,22 @@
         onValue(dbRefMaestro, (snapshot) => {
             dataMaestro = snapshot.val() || [];
             document.getElementById('totalMaestro').innerText = dataMaestro.length;
-            
-            renderMonitorAgrupado(rawRegistrosGlobal); 
+            renderMonitorAgrupado(); 
         });
 
         onValue(dbRefRegistros, (snapshot) => {
             rawRegistrosGlobal = snapshot.val() || {};
-            renderMonitorAgrupado(rawRegistrosGlobal);
+            
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                renderMonitorAgrupado();
+            }, 300);
         });
 
         onValue(dbRefBateria, (snapshot) => {
             bateriasGlobal = snapshot.val() || {};
             if(Object.keys(rawRegistrosGlobal).length > 0) {
-                renderMonitorAgrupado(rawRegistrosGlobal);
+                renderMonitorAgrupado();
             }
         });
 
@@ -83,8 +93,8 @@
             `).join('');
         });
 
-        function renderMonitorAgrupado(registros) {
-            const listaRaw = Object.values(registros);
+        function renderMonitorAgrupado() {
+            const listaRaw = Object.values(rawRegistrosGlobal);
             
             const setUsuariosUnicos = new Set();
             listaRaw.forEach(reg => {
@@ -99,8 +109,6 @@
                     const opacity = (filtroUsuarioGlobal === 'todos' || isSelected) ? '1' : '0.4';
                     
                     let infoBateria = '';
-                    
-                    // Ajuste para que encuentre el usuario sin importar mayúsculas o minúsculas
                     const keyBateria = Object.keys(bateriasGlobal).find(k => String(k).toUpperCase() === String(u).toUpperCase());
 
                     if(keyBateria && bateriasGlobal[keyBateria]) {
@@ -122,46 +130,8 @@
                 agrupados[reg.cod].cant += parseFloat(reg.cant || 0);
                 agrupados[reg.cod].usuarios.add(reg.usuario);
             });
-            const listaFinal = Object.values(agrupados).reverse();
-
-            let contCuadrados = 0;
-            let contFaltantes = 0;
-            let contSobrantes = 0;
-
-            document.getElementById('bodyMonitor').innerHTML = listaFinal.map(reg => {
-                const teo = parseFloat(reg.teorico || 0);
-                const fis = reg.cant;
-                const dif = fis - teo;
-                const colorDif = dif === 0 ? '#2ec4b6' : (dif < 0 ? '#e71d36' : '#4361ee');
-                
-                if (dif === 0) {
-                    contCuadrados++;
-                } else if (dif < 0) {
-                    contFaltantes++;
-                } else if (dif > 0) {
-                    contSobrantes++;
-                }
-
-                return `
-                    <tr>
-                        <td><span class="user-pill">${Array.from(reg.usuarios).join(', ')}</span></td>
-                        <td style="user-select: text; cursor: text;" title="Seleccionar código">${reg.cod}</td>
-                        <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
-                        <td align="center">${teo}</td>
-                        <td align="center"><b>${fis}</b></td>
-                        <td align="center" style="color:${colorDif}; font-weight:bold;">${dif > 0 ? '+'+dif : dif}</td>
-                        <td align="center">
-                            <button class="btn-action-delete" onclick="eliminarRegistroIndividual('${reg.cod}')" title="Eliminar registro">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </button>
-                        </td>
-                    </tr>`;
-            }).join('');
             
-            document.getElementById('countCuadrados').innerText = contCuadrados;
-            document.getElementById('countFaltantes').innerText = contFaltantes;
-            document.getElementById('countSobrantes').innerText = contSobrantes;
-
+            listaAgrupadaGlobal = Object.values(agrupados).reverse();
             document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
             
             ejecutarFiltro();
@@ -188,23 +158,13 @@
         };
 
         window.copiarTablaExcel = () => {
-            const filas = document.querySelectorAll('#bodyMonitor tr');
             let textoCopiar = "Operadores\tCódigo\tUbicación\tStock\tEncontrados\tDif.\n";
-            
-            filas.forEach(fila => {
-                if (fila.style.display !== "none") {
-                    const celdas = fila.querySelectorAll('td');
-                    if (celdas.length >= 6) {
-                        const operadores = celdas[0].innerText.trim();
-                        const codigo = celdas[1].innerText.trim();
-                        const ubicacion = celdas[2].innerText.trim();
-                        const stock = celdas[3].innerText.trim();
-                        const encontrados = celdas[4].innerText.trim();
-                        const dif = celdas[5].innerText.trim();
-                        
-                        textoCopiar += `${operadores}\t${codigo}\t${ubicacion}\t${stock}\t${encontrados}\t${dif}\n`;
-                    }
-                }
+            listaFiltradaGlobal.forEach(reg => {
+                const operadores = Array.from(reg.usuarios).join(', ');
+                const stock = parseFloat(reg.teorico || 0);
+                const encontrados = reg.cant;
+                const dif = encontrados - stock;
+                textoCopiar += `${operadores}\t${reg.cod}\t${reg.pos}\t${stock}\t${encontrados}\t${dif}\n`;
             });
 
             navigator.clipboard.writeText(textoCopiar).then(() => {
@@ -284,7 +244,6 @@
 
         window.setFiltroEstado = (estado) => {
             filtroEstadoGlobal = filtroEstadoGlobal === estado ? 'todos' : estado; 
-            
             document.querySelectorAll('.mini-card').forEach(c => c.style.opacity = '1');
             if (filtroEstadoGlobal !== 'todos') {
                 document.querySelectorAll('.mini-card').forEach(c => {
@@ -296,7 +255,6 @@
 
         window.setFiltroUsuario = (usuario) => {
             filtroUsuarioGlobal = filtroUsuarioGlobal === usuario ? 'todos' : usuario;
-            
             document.querySelectorAll('.user-filter-btn').forEach(btn => {
                 if (filtroUsuarioGlobal === 'todos') {
                     btn.style.opacity = '1';
@@ -309,34 +267,85 @@
 
         window.ejecutarFiltro = () => {
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
-            const filas = document.querySelectorAll('#bodyMonitor tr');
-            
-            filas.forEach(fila => {
-                const textoFila = fila.innerText.toLowerCase();
-                
-                let cumpleEstado = true;
-                let cumpleUsuario = true;
-                
-                const celdas = fila.querySelectorAll('td');
-                if (celdas.length >= 6) {
-                    if (filtroEstadoGlobal !== 'todos') {
-                        const dif = parseFloat(celdas[5].innerText) || 0;
-                        if (filtroEstadoGlobal === 'cuadrados' && dif !== 0) cumpleEstado = false;
-                        if (filtroEstadoGlobal === 'faltantes' && dif >= 0) cumpleEstado = false;
-                        if (filtroEstadoGlobal === 'sobrantes' && dif <= 0) cumpleEstado = false;
-                    }
+            let contCuadrados = 0, contFaltantes = 0, contSobrantes = 0;
 
-                    if (filtroUsuarioGlobal !== 'todos') {
-                        const operadoresText = celdas[0].innerText.toUpperCase();
-                        if (!operadoresText.includes(filtroUsuarioGlobal.toUpperCase())) {
-                            cumpleUsuario = false;
-                        }
+            listaFiltradaGlobal = listaAgrupadaGlobal.filter(reg => {
+                const teo = parseFloat(reg.teorico || 0);
+                const fis = reg.cant;
+                const dif = fis - teo;
+                
+                if (dif === 0) contCuadrados++;
+                else if (dif < 0) contFaltantes++;
+                else if (dif > 0) contSobrantes++;
+
+                let cumpleEstado = true;
+                if (filtroEstadoGlobal === 'cuadrados' && dif !== 0) cumpleEstado = false;
+                if (filtroEstadoGlobal === 'faltantes' && dif >= 0) cumpleEstado = false;
+                if (filtroEstadoGlobal === 'sobrantes' && dif <= 0) cumpleEstado = false;
+
+                let cumpleUsuario = true;
+                if (filtroUsuarioGlobal !== 'todos') {
+                    const operadoresText = Array.from(reg.usuarios).join(', ').toUpperCase();
+                    if (!operadoresText.includes(filtroUsuarioGlobal.toUpperCase())) {
+                        cumpleUsuario = false;
                     }
                 }
 
-                fila.style.display = (textoFila.includes(term) && cumpleEstado && cumpleUsuario) ? "" : "none";
+                const textoFila = `${Array.from(reg.usuarios).join(', ')} ${reg.cod} ${reg.pos}`.toLowerCase();
+                const cumpleBusqueda = textoFila.includes(term);
+
+                return cumpleEstado && cumpleUsuario && cumpleBusqueda;
             });
+
+            document.getElementById('countCuadrados').innerText = contCuadrados;
+            document.getElementById('countFaltantes').innerText = contFaltantes;
+            document.getElementById('countSobrantes').innerText = contSobrantes;
+
+            itemsCargados = 0;
+            document.getElementById('bodyMonitor').innerHTML = "";
+            renderizarSiguientePagina();
         };
+
+        function renderizarSiguientePagina() {
+            const chunk = listaFiltradaGlobal.slice(itemsCargados, itemsCargados + itemsPorPagina);
+            if (chunk.length === 0) return;
+
+            const html = chunk.map(reg => {
+                const teo = parseFloat(reg.teorico || 0);
+                const fis = reg.cant;
+                const dif = fis - teo;
+                const colorDif = dif === 0 ? '#2ec4b6' : (dif < 0 ? '#e71d36' : '#4361ee');
+
+                return `
+                    <tr>
+                        <td><span class="user-pill">${Array.from(reg.usuarios).join(', ')}</span></td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar código">${reg.cod}</td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
+                        <td align="center">${teo}</td>
+                        <td align="center"><b>${fis}</b></td>
+                        <td align="center" style="color:${colorDif}; font-weight:bold;">${dif > 0 ? '+'+dif : dif}</td>
+                        <td align="center">
+                            <button class="btn-action-delete" onclick="eliminarRegistroIndividual('${reg.cod}')" title="Eliminar registro">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            document.getElementById('bodyMonitor').insertAdjacentHTML('beforeend', html);
+            itemsCargados += itemsPorPagina;
+        }
+
+        setTimeout(() => {
+            const scrollContainers = document.querySelectorAll('.scroll');
+            if(scrollContainers.length > 0) {
+                scrollContainers[0].addEventListener('scroll', function() {
+                    if (this.scrollTop + this.clientHeight >= this.scrollHeight - 20) {
+                        renderizarSiguientePagina();
+                    }
+                });
+            }
+        }, 300);
 
         window.abrirModalEstadisticas = () => {
             const agrupados = {};

@@ -29,6 +29,8 @@
         let dataMaestro = {};
         let conteo1 = {};
         let conteo2 = {};
+        
+        let filtroEstadoReconteo = 'todos';
 
         window.validarAcceso = () => {
             const pass = document.getElementById('passLog').value;
@@ -38,7 +40,6 @@
             } else { alert("Acceso Incorrecto"); }
         };
 
-        // Escuchar las 3 bases de datos en tiempo real
         onValue(dbRefMaestro, snap => {
             dataMaestro = {};
             (snap.val() || []).forEach(i => { if(i.cod) dataMaestro[i.cod] = i; });
@@ -120,7 +121,7 @@
                     </tr>`;
             }).join('');
 
-            ejecutarFiltro(); // Se llama para mantener la búsqueda activa al actualizar
+            ejecutarFiltro(); 
         }
 
         window.eliminarReconteo = async (codigo) => {
@@ -134,18 +135,45 @@
             }
         };
 
-        // --- NUEVO: FUNCIONALIDAD DE BUSCADOR ---
+        window.setFiltroEstadoReconteo = (estado) => {
+            filtroEstadoReconteo = filtroEstadoReconteo === estado ? 'todos' : estado; 
+            
+            document.querySelectorAll('.mini-card').forEach(c => c.style.opacity = '1');
+            if (filtroEstadoReconteo !== 'todos') {
+                document.querySelectorAll('.mini-card').forEach(c => {
+                    if (!c.classList.contains('mc-' + estado)) c.style.opacity = '0.4';
+                });
+            }
+            ejecutarFiltro();
+        };
+
         window.ejecutarFiltro = () => {
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
             const filas = document.querySelectorAll('#bodyMonitor tr');
             
             filas.forEach(fila => {
                 const textoFila = fila.innerText.toLowerCase();
-                fila.style.display = textoFila.includes(term) ? "" : "none";
+                let cumpleEstado = true;
+                
+                const celdas = fila.querySelectorAll('td');
+                if (celdas.length >= 7) {
+                    const difFinalText = celdas[5].innerText.trim();
+                    
+                    if (filtroEstadoReconteo === 'resueltos') {
+                        if (difFinalText !== "0" && difFinalText !== "+0" && difFinalText !== "-0") {
+                            cumpleEstado = false;
+                        }
+                    } else if (filtroEstadoReconteo === 'confirmados') {
+                        if (difFinalText === "0" || difFinalText === "+0" || difFinalText === "-0" || difFinalText === "-") {
+                            cumpleEstado = false;
+                        }
+                    }
+                }
+
+                fila.style.display = (textoFila.includes(term) && cumpleEstado) ? "" : "none";
             });
         };
 
-        // --- NUEVO: COPIAR TABLA A EXCEL ---
         window.copiarTablaExcel = () => {
             const filas = document.querySelectorAll('#bodyMonitor tr');
             let textoCopiar = "Código\tUbicación\tStock\t1er Conteo\tReconteo Final\tDif. Final\tOperador Reconteo\n";
@@ -157,7 +185,6 @@
                         const codigo = celdas[0].innerText.trim();
                         const ubicacion = celdas[1].innerText.trim();
                         const teorico = celdas[2].innerText.trim();
-                        // Se reemplaza saltos de linea por espacio para que quede limpio en Excel
                         const conteo1 = celdas[3].innerText.trim().replace(/\n/g, ' ').replace(/\s+/g, ' '); 
                         const conteo2 = celdas[4].innerText.trim();
                         const difFinal = celdas[5].innerText.trim();
@@ -175,7 +202,6 @@
             });
         };
 
-        // --- NUEVO: BORRAR TODOS LOS RECONTEOS ---
         window.borrarTodoReconteo = async () => {
             if(confirm("⚠️ ¿DESEAS BORRAR TODO EL HISTORIAL DE RECONTEOS?\n\nEsto dejará en blanco la columna 'Reconteo Final'.\nTranquilo, tu 1er conteo NO se verá afectado.")) {
                 await remove(dbRefReconteo);
@@ -208,13 +234,18 @@
         .btn-action-delete { background: none; border: none; cursor: pointer; font-size: 1.1rem; }
         .scroll { max-height: 600px; overflow-y: auto; }
         
-        /* --- NUEVOS ESTILOS --- */
         .btn-danger-main { background: var(--danger); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .btn-danger-main:hover { background: #c9182b; }
         .btn-copy-excel { background: #15803d; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; }
         .btn-copy-excel:hover { background: #166534; }
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; box-sizing: border-box;}
         .search-input:focus { border-color: var(--primary); }
+        
+        /* --- ESTILOS MINI DASHBOARD RECONTEO --- */
+        .mini-dashboard { display: flex; gap: 10px; margin-bottom: 15px; }
+        .mini-card { flex: 1; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.85rem; cursor:pointer; transition: opacity 0.3s; }
+        .mc-resueltos { background: #e6f9f7; color: var(--success); border: 1px solid #c0f0eb; }
+        .mc-confirmados { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
     </style>
 </head>
 <body>
@@ -248,6 +279,11 @@
         <div class="section-header">
             <h3 style="margin:0;">Comparativa de Auditoría</h3>
             <button class="btn-copy-excel" onclick="copiarTablaExcel()">📋 Copiar para Excel</button>
+        </div>
+        
+        <div class="mini-dashboard">
+            <div class="mini-card mc-resueltos" onclick="setFiltroEstadoReconteo('resueltos')" title="Filtrar Descuadres Resueltos">✅ Descuadre Resuelto</div>
+            <div class="mini-card mc-confirmados" onclick="setFiltroEstadoReconteo('confirmados')" title="Filtrar Descuadres Confirmados">⚠️ Descuadre Confirmado</div>
         </div>
         
         <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
