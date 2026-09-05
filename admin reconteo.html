@@ -32,6 +32,10 @@
         
         let filtroEstadoReconteo = 'todos';
 
+        // Variables para el ordenamiento
+        let colOrdenActual = null;
+        let ordenAscendente = true;
+
         window.validarAcceso = () => {
             const pass = document.getElementById('passLog').value;
             if (pass === "2026") { 
@@ -68,6 +72,17 @@
             procesarTablaComparativa();
         });
 
+        // Función para cambiar la columna de orden
+        window.ordenarPor = (columna) => {
+            if (colOrdenActual === columna) {
+                ordenAscendente = !ordenAscendente;
+            } else {
+                colOrdenActual = columna;
+                ordenAscendente = true;
+            }
+            procesarTablaComparativa();
+        };
+
         function procesarTablaComparativa() {
             if(Object.keys(dataMaestro).length === 0) return;
             
@@ -99,8 +114,55 @@
                 }
             }
 
-            document.getElementById('totalDescuadre').innerText = descuadradosData.length;
+            // Aplicar lógica de ordenamiento si hay una columna seleccionada
+            if (colOrdenActual) {
+                descuadradosData.sort((a, b) => {
+                    let valA = a[colOrdenActual];
+                    let valB = b[colOrdenActual];
+
+                    // Manejo de valores sin recontar para que se vayan al final o inicio adecuadamente
+                    if (valA === "-" || valA === "Pendiente") valA = ordenAscendente ? 999999999 : -999999999;
+                    if (valB === "-" || valB === "Pendiente") valB = ordenAscendente ? 999999999 : -999999999;
+
+                    let numA = Number(valA);
+                    let numB = Number(valB);
+
+                    // Si ambos valores se pueden tratar como números (Ej: Códigos numéricos, stock, conteos)
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        return ordenAscendente ? numA - numB : numB - numA;
+                    } else {
+                        // Si son textos (Ej: Ubicación, Operador)
+                        let strA = String(valA).toLowerCase();
+                        let strB = String(valB).toLowerCase();
+                        if (strA < strB) return ordenAscendente ? -1 : 1;
+                        if (strA > strB) return ordenAscendente ? 1 : -1;
+                        return 0;
+                    }
+                });
+            }
+
+            // Cálculos para indicadores de resueltos y confirmados
+            let totalDescuadres = descuadradosData.length;
+            let cantidadResueltos = 0;
+            let cantidadConfirmados = 0;
+
+            descuadradosData.forEach(reg => {
+                if (reg.difFinal === 0) {
+                    cantidadResueltos++;
+                } else if (reg.difFinal !== "-") {
+                    cantidadConfirmados++;
+                }
+            });
+
+            let pctResueltos = totalDescuadres > 0 ? Math.round((cantidadResueltos / totalDescuadres) * 100) : 0;
+            let pctConfirmados = totalDescuadres > 0 ? Math.round((cantidadConfirmados / totalDescuadres) * 100) : 0;
+
+            document.getElementById('totalDescuadre').innerText = totalDescuadres;
             document.getElementById('totalRecontado').innerText = reconteosCompletados;
+            
+            // Mostrar cantidad y porcentaje en los mini-cards
+            document.getElementById('countResueltos').innerText = `(${cantidadResueltos} | ${pctResueltos}%)`;
+            document.getElementById('countConfirmados').innerText = `(${cantidadConfirmados} | ${pctConfirmados}%)`;
 
             document.getElementById('bodyMonitor').innerHTML = descuadradosData.map(reg => {
                 let colorDif1 = reg.dif1 === 0 ? '#2ec4b6' : (reg.dif1 < 0 ? '#e71d36' : '#4361ee');
@@ -282,8 +344,8 @@
         </div>
         
         <div class="mini-dashboard">
-            <div class="mini-card mc-resueltos" onclick="setFiltroEstadoReconteo('resueltos')" title="Filtrar Descuadres Resueltos">✅ Descuadre Resuelto</div>
-            <div class="mini-card mc-confirmados" onclick="setFiltroEstadoReconteo('confirmados')" title="Filtrar Descuadres Confirmados">⚠️ Descuadre Confirmado</div>
+            <div class="mini-card mc-resueltos" onclick="setFiltroEstadoReconteo('resueltos')" title="Filtrar Descuadres Resueltos">✅ Descuadre Resuelto <span id="countResueltos"></span></div>
+            <div class="mini-card mc-confirmados" onclick="setFiltroEstadoReconteo('confirmados')" title="Filtrar Descuadres Confirmados">⚠️ Descuadre Confirmado <span id="countConfirmados"></span></div>
         </div>
         
         <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
@@ -292,13 +354,13 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Código</th>
-                        <th>Ubicación</th>
-                        <th style="text-align:center;">Stock</th>
-                        <th style="text-align:center; background:#fef2f2;">1er Conteo (Registros)</th>
-                        <th style="text-align:center; background:#eff6ff;">Reconteo Final</th>
-                        <th style="text-align:center;">Dif. Final</th>
-                        <th>Operador Reconteo</th>
+                        <th onclick="ordenarPor('cod')" style="cursor:pointer;" title="Clic para ordenar">Código</th>
+                        <th onclick="ordenarPor('pos')" style="cursor:pointer;" title="Clic para ordenar">Ubicación</th>
+                        <th onclick="ordenarPor('teorico')" style="text-align:center; cursor:pointer;" title="Clic para ordenar">Stock</th>
+                        <th onclick="ordenarPor('fisico1')" style="text-align:center; background:#fef2f2; cursor:pointer;" title="Clic para ordenar">1er Conteo (Registros)</th>
+                        <th onclick="ordenarPor('fisico2')" style="text-align:center; background:#eff6ff; cursor:pointer;" title="Clic para ordenar">Reconteo Final</th>
+                        <th onclick="ordenarPor('difFinal')" style="text-align:center; cursor:pointer;" title="Clic para ordenar">Dif. Final</th>
+                        <th onclick="ordenarPor('usuario')" style="cursor:pointer;" title="Clic para ordenar">Operador Reconteo</th>
                         <th style="text-align:center;">Acción</th>
                     </tr>
                 </thead>
