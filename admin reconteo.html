@@ -105,29 +105,61 @@
             let descuadradosData = [];
             let reconteosCompletados = 0;
             let noCoinciden = 0; // Contador para la nueva tarjeta
+            
+            // --- NUEVAS ESTADISTICAS DE PRECISION ---
+            let adminStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
+            let reconteoStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
+            let generalStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
 
             for (let cod in dataMaestro) {
                 let maestroItem = dataMaestro[cod];
                 let teorico = parseFloat(maestroItem.stock || 0);
                 
-                let fueContado = conteo1[cod] !== undefined;
-                let fisico1 = fueContado ? conteo1[cod] : 0;
+                let fueContado1 = conteo1[cod] !== undefined;
+                let fisico1 = fueContado1 ? conteo1[cod] : 0;
                 
-                // Si hay descuadre O el código quedó pendiente en el primer conteo
-                if (!fueContado || fisico1 !== teorico) {
-                    let reconteoObj = conteo2[cod];
-                    let fisico2 = reconteoObj ? reconteoObj.cant : "-";
-                    let difFinal = reconteoObj ? (fisico2 - teorico) : "-";
-                    let userReconteo = reconteoObj ? Array.from(reconteoObj.usuarios).join(', ') : "Pendiente";
-                    
-                    if(reconteoObj) {
-                        reconteosCompletados++;
-                        // Evaluar si el reconteo no coincide con el 1er conteo
-                        if(fisico2 !== fisico1) {
-                            noCoinciden++;
-                        }
-                    }
+                let reconteoObj = conteo2[cod];
+                let fueContado2 = reconteoObj !== undefined;
+                let fisico2 = fueContado2 ? reconteoObj.cant : "-";
+                let difFinal = fueContado2 ? (fisico2 - teorico) : "-";
+                let userReconteo = reconteoObj ? Array.from(reconteoObj.usuarios).join(', ') : "Pendiente";
+                
+                // Cálculos de Admin (1er Conteo)
+                if (fueContado1) {
+                    adminStats.total++;
+                    let dif1 = fisico1 - teorico;
+                    if (dif1 === 0) adminStats.cuad++;
+                    else if (dif1 < 0) adminStats.falt++;
+                    else adminStats.sobr++;
+                }
 
+                // Cálculos de Reconteo (2do Conteo)
+                if (fueContado2) {
+                    reconteoStats.total++;
+                    if (difFinal === 0) reconteoStats.cuad++;
+                    else if (difFinal < 0) reconteoStats.falt++;
+                    else reconteoStats.sobr++;
+                }
+
+                // Cálculos Generales (Total Final unificado)
+                if (fueContado1 || fueContado2) {
+                    generalStats.total++;
+                    let difGen = fueContado2 ? difFinal : (fisico1 - teorico);
+                    if (difGen === 0) generalStats.cuad++;
+                    else if (difGen < 0) generalStats.falt++;
+                    else generalStats.sobr++;
+                }
+
+                if(reconteoObj) {
+                    reconteosCompletados++;
+                    // Evaluar si el reconteo no coincide con el 1er conteo
+                    if(fisico2 !== fisico1) {
+                        noCoinciden++;
+                    }
+                }
+
+                // Si hay descuadre O el código quedó pendiente en el primer conteo
+                if (!fueContado1 || fisico1 !== teorico) {
                     descuadradosData.push({
                         cod: cod, pos: maestroItem.pos,
                         teorico: teorico,
@@ -211,6 +243,21 @@
                         </td>
                     </tr>`;
             }).join('');
+
+            // --- ACTUALIZAR DOM DE ESTADÍSTICAS DE PRECISIÓN ---
+            const calcPct = (val, total) => total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+            
+            document.getElementById('st-ad-cuad').innerText = `${adminStats.cuad} (${calcPct(adminStats.cuad, adminStats.total)}%)`;
+            document.getElementById('st-ad-falt').innerText = `${adminStats.falt} (${calcPct(adminStats.falt, adminStats.total)}%)`;
+            document.getElementById('st-ad-sobr').innerText = `${adminStats.sobr} (${calcPct(adminStats.sobr, adminStats.total)}%)`;
+
+            document.getElementById('st-re-cuad').innerText = `${reconteoStats.cuad} (${calcPct(reconteoStats.cuad, reconteoStats.total)}%)`;
+            document.getElementById('st-re-falt').innerText = `${reconteoStats.falt} (${calcPct(reconteoStats.falt, reconteoStats.total)}%)`;
+            document.getElementById('st-re-sobr').innerText = `${reconteoStats.sobr} (${calcPct(reconteoStats.sobr, reconteoStats.total)}%)`;
+
+            document.getElementById('st-gen-cuad').innerText = `${generalStats.cuad} (${calcPct(generalStats.cuad, generalStats.total)}%)`;
+            document.getElementById('st-gen-falt').innerText = `${generalStats.falt} (${calcPct(generalStats.falt, generalStats.total)}%)`;
+            document.getElementById('st-gen-sobr').innerText = `${generalStats.sobr} (${calcPct(generalStats.sobr, generalStats.total)}%)`;
 
             ejecutarFiltro(); 
         }
@@ -453,6 +500,63 @@
     </div>
 
     <div class="section">
+        <!-- NUEVO BLOQUE DE ESTADÍSTICAS DE PRECISIÓN -->
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #333;">Estadísticas de Precisión Global</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 25px;">
+            <!-- Admin -->
+            <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+                <h4 style="margin: 0 0 12px 0; color: #475569; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">1er Conteo (Admin)</h4>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
+                    <span style="color: var(--success); font-weight: bold;">✅ Cuadrados:</span>
+                    <span id="st-ad-cuad" style="font-weight: bold; color: #555;">0 (0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
+                    <span style="color: var(--danger); font-weight: bold;">⬇️ Faltantes:</span>
+                    <span id="st-ad-falt" style="font-weight: bold; color: #555;">0 (0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span style="color: var(--warning); font-weight: bold;">⬆️ Sobrantes:</span>
+                    <span id="st-ad-sobr" style="font-weight: bold; color: #555;">0 (0%)</span>
+                </div>
+            </div>
+            
+            <!-- Reconteo -->
+            <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+                <h4 style="margin: 0 0 12px 0; color: #475569; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Reconteo</h4>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
+                    <span style="color: var(--success); font-weight: bold;">✅ Cuadrados:</span>
+                    <span id="st-re-cuad" style="font-weight: bold; color: #555;">0 (0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
+                    <span style="color: var(--danger); font-weight: bold;">⬇️ Faltantes:</span>
+                    <span id="st-re-falt" style="font-weight: bold; color: #555;">0 (0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span style="color: var(--warning); font-weight: bold;">⬆️ Sobrantes:</span>
+                    <span id="st-re-sobr" style="font-weight: bold; color: #555;">0 (0%)</span>
+                </div>
+            </div>
+            
+            <!-- Total General -->
+            <div style="background: #f0f9ff; padding: 15px; border-radius: 10px; border: 1px solid #bae6fd; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+                <h4 style="margin: 0 0 12px 0; color: var(--primary); text-align: center; border-bottom: 2px solid #bae6fd; padding-bottom: 8px;">Total General (Final)</h4>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
+                    <span style="color: var(--success); font-weight: bold;">✅ Cuadrados:</span>
+                    <span id="st-gen-cuad" style="font-weight: bold; color: #333;">0 (0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
+                    <span style="color: var(--danger); font-weight: bold;">⬇️ Faltantes:</span>
+                    <span id="st-gen-falt" style="font-weight: bold; color: #333;">0 (0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span style="color: var(--warning); font-weight: bold;">⬆️ Sobrantes:</span>
+                    <span id="st-gen-sobr" style="font-weight: bold; color: #333;">0 (0%)</span>
+                </div>
+            </div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 20px;">
+
         <div class="section-header">
             <h3 style="margin:0;">Comparativa de Auditoría</h3>
             <button class="btn-copy-excel" onclick="descargarExcel()">📥 Descargar Excel</button>
