@@ -145,8 +145,8 @@
                 return `
                     <tr>
                         <td><span class="user-pill">${Array.from(reg.usuarios).join(', ')}</span></td>
-                        <td>${reg.cod}</td>
-                        <td><b style="color:#4361ee">${reg.pos}</b></td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar código">${reg.cod}</td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
                         <td align="center">${teo}</td>
                         <td align="center"><b>${fis}</b></td>
                         <td align="center" style="color:${colorDif}; font-weight:bold;">${dif > 0 ? '+'+dif : dif}</td>
