@@ -103,19 +103,19 @@
             if (Object.keys(inventarioMaestro).length === 0) return;
             const listaDescuadrados = [];
 
-            // Evaluamos todos los códigos contados en el primer conteo
-            for (let cod in conteo1Agrupado) {
-                let fisico1 = conteo1Agrupado[cod];
+            // Evaluamos desde el inventario maestro completo
+            for (let cod in inventarioMaestro) {
                 let maestroItem = inventarioMaestro[cod];
+                let teorico = parseFloat(maestroItem.stock || 0);
                 
-                if (maestroItem) {
-                    let teorico = parseFloat(maestroItem.stock || 0);
-                    // Si hay descuadre y AÚN NO ha sido recontado en la nueva base
-                    if (fisico1 !== teorico && !reconteoAgrupado[cod]) {
-                        listaDescuadrados.push({
-                            cod: cod, pos: maestroItem.pos, nom: maestroItem.nom
-                        });
-                    }
+                let fueContado = conteo1Agrupado[cod] !== undefined;
+                let fisico1 = fueContado ? conteo1Agrupado[cod] : 0;
+                
+                // Si no fue contado, o si fue contado y hay descuadre, y AÚN NO ha sido recontado
+                if ((!fueContado || fisico1 !== teorico) && !reconteoAgrupado[cod]) {
+                    listaDescuadrados.push({
+                        cod: cod, pos: maestroItem.pos, nom: maestroItem.nom
+                    });
                 }
             }
 

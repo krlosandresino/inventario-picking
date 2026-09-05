@@ -106,34 +106,35 @@
             let reconteosCompletados = 0;
             let noCoinciden = 0; // Contador para la nueva tarjeta
 
-            for (let cod in conteo1) {
-                let fisico1 = conteo1[cod];
+            for (let cod in dataMaestro) {
                 let maestroItem = dataMaestro[cod];
+                let teorico = parseFloat(maestroItem.stock || 0);
                 
-                if (maestroItem) {
-                    let teorico = parseFloat(maestroItem.stock || 0);
-                    if (fisico1 !== teorico) {
-                        let reconteoObj = conteo2[cod];
-                        let fisico2 = reconteoObj ? reconteoObj.cant : "-";
-                        let difFinal = reconteoObj ? (fisico2 - teorico) : "-";
-                        let userReconteo = reconteoObj ? Array.from(reconteoObj.usuarios).join(', ') : "Pendiente";
-                        
-                        if(reconteoObj) {
-                            reconteosCompletados++;
-                            // Evaluar si el reconteo no coincide con el 1er conteo
-                            if(fisico2 !== fisico1) {
-                                noCoinciden++;
-                            }
+                let fueContado = conteo1[cod] !== undefined;
+                let fisico1 = fueContado ? conteo1[cod] : 0;
+                
+                // Si hay descuadre O el código quedó pendiente en el primer conteo
+                if (!fueContado || fisico1 !== teorico) {
+                    let reconteoObj = conteo2[cod];
+                    let fisico2 = reconteoObj ? reconteoObj.cant : "-";
+                    let difFinal = reconteoObj ? (fisico2 - teorico) : "-";
+                    let userReconteo = reconteoObj ? Array.from(reconteoObj.usuarios).join(', ') : "Pendiente";
+                    
+                    if(reconteoObj) {
+                        reconteosCompletados++;
+                        // Evaluar si el reconteo no coincide con el 1er conteo
+                        if(fisico2 !== fisico1) {
+                            noCoinciden++;
                         }
-
-                        descuadradosData.push({
-                            cod: cod, pos: maestroItem.pos,
-                            teorico: teorico,
-                            fisico1: fisico1, dif1: fisico1 - teorico,
-                            fisico2: fisico2, difFinal: difFinal,
-                            usuario: userReconteo
-                        });
                     }
+
+                    descuadradosData.push({
+                        cod: cod, pos: maestroItem.pos,
+                        teorico: teorico,
+                        fisico1: fisico1, dif1: fisico1 - teorico,
+                        fisico2: fisico2, difFinal: difFinal,
+                        usuario: userReconteo
+                    });
                 }
             }
 
