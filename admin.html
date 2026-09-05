@@ -36,6 +36,10 @@
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
 
+        // --- VARIABLES SORT ---
+        let sortColumnaGlobal = null;
+        let sortDireccionGlobal = 1;
+
         // --- VARIABLES LAZY LOADING ---
         let debounceTimer;
         let listaAgrupadaGlobal = [];
@@ -265,6 +269,66 @@
             ejecutarFiltro();
         };
 
+        window.ordenarTabla = (columna) => {
+            if (sortColumnaGlobal === columna) {
+                sortDireccionGlobal *= -1; 
+            } else {
+                sortColumnaGlobal = columna;
+                sortDireccionGlobal = 1;
+            }
+
+            const ths = document.querySelectorAll('#headMonitor th[data-col]');
+            ths.forEach(th => {
+                th.innerText = th.innerText.replace(' ▲', '').replace(' ▼', '');
+                if (th.getAttribute('data-col') === columna) {
+                    th.innerText += sortDireccionGlobal === 1 ? ' ▲' : ' ▼';
+                }
+            });
+
+            // AQUI ESTÁ LA CORRECCIÓN: Llamamos a ejecutarFiltro para que limpie y vuelva a dibujar la tabla instantáneamente.
+            ejecutarFiltro();
+        };
+
+        window.aplicarOrdenamiento = () => {
+            if (!sortColumnaGlobal) return;
+
+            listaFiltradaGlobal.sort((a, b) => {
+                let valA, valB;
+                switch(sortColumnaGlobal) {
+                    case 'operadores':
+                        valA = Array.from(a.usuarios).join(', ').toLowerCase();
+                        valB = Array.from(b.usuarios).join(', ').toLowerCase();
+                        break;
+                    case 'codigo':
+                        valA = String(a.cod).toLowerCase();
+                        valB = String(b.cod).toLowerCase();
+                        break;
+                    case 'ubicacion':
+                        valA = String(a.pos).toLowerCase();
+                        valB = String(b.pos).toLowerCase();
+                        break;
+                    case 'stock':
+                        valA = parseFloat(a.teorico || 0);
+                        valB = parseFloat(b.teorico || 0);
+                        break;
+                    case 'encontrados':
+                        valA = parseFloat(a.cant || 0);
+                        valB = parseFloat(b.cant || 0);
+                        break;
+                    case 'dif':
+                        valA = parseFloat(a.cant || 0) - parseFloat(a.teorico || 0);
+                        valB = parseFloat(b.cant || 0) - parseFloat(b.teorico || 0);
+                        break;
+                    default:
+                        return 0;
+                }
+
+                if (valA < valB) return -1 * sortDireccionGlobal;
+                if (valA > valB) return 1 * sortDireccionGlobal;
+                return 0;
+            });
+        };
+
         window.ejecutarFiltro = () => {
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
             let contCuadrados = 0, contFaltantes = 0, contSobrantes = 0;
@@ -297,18 +361,18 @@
                 return cumpleEstado && cumpleUsuario && cumpleBusqueda;
             });
 
-            // Calculamos el total de registros filtrados para obtener el porcentaje
             const totalRegistros = contCuadrados + contFaltantes + contSobrantes;
-            
-            // Calculamos el porcentaje redondeado a 1 decimal
             const pctCuadrados = totalRegistros > 0 ? ((contCuadrados / totalRegistros) * 100).toFixed(1) : 0;
             const pctFaltantes = totalRegistros > 0 ? ((contFaltantes / totalRegistros) * 100).toFixed(1) : 0;
             const pctSobrantes = totalRegistros > 0 ? ((contSobrantes / totalRegistros) * 100).toFixed(1) : 0;
 
-            // Actualizamos el texto para mostrar "Cantidad (Porcentaje%)"
             document.getElementById('countCuadrados').innerText = `${contCuadrados} (${pctCuadrados}%)`;
             document.getElementById('countFaltantes').innerText = `${contFaltantes} (${pctFaltantes}%)`;
             document.getElementById('countSobrantes').innerText = `${contSobrantes} (${pctSobrantes}%)`;
+
+            if (sortColumnaGlobal) {
+                aplicarOrdenamiento();
+            }
 
             itemsCargados = 0;
             document.getElementById('bodyMonitor').innerHTML = "";
@@ -498,7 +562,17 @@
             
             <div class="scroll">
                 <table>
-                    <thead><tr><th>Operadores</th><th>Código</th><th>Ubicación</th><th>Stock</th><th>Encontrados</th><th>Dif.</th><th style="text-align:center;">Acción</th></tr></thead>
+                    <thead id="headMonitor">
+                        <tr>
+                            <th data-col="operadores" onclick="ordenarTabla('operadores')" style="cursor:pointer; user-select:none;" title="Ordenar por Operadores">Operadores</th>
+                            <th data-col="codigo" onclick="ordenarTabla('codigo')" style="cursor:pointer; user-select:none;" title="Ordenar por Código">Código</th>
+                            <th data-col="ubicacion" onclick="ordenarTabla('ubicacion')" style="cursor:pointer; user-select:none;" title="Ordenar por Ubicación">Ubicación</th>
+                            <th data-col="stock" onclick="ordenarTabla('stock')" style="cursor:pointer; user-select:none;" title="Ordenar por Stock">Stock</th>
+                            <th data-col="encontrados" onclick="ordenarTabla('encontrados')" style="cursor:pointer; user-select:none;" title="Ordenar por Encontrados">Encontrados</th>
+                            <th data-col="dif" onclick="ordenarTabla('dif')" style="cursor:pointer; user-select:none;" title="Ordenar por Diferencia">Dif.</th>
+                            <th style="text-align:center;">Acción</th>
+                        </tr>
+                    </thead>
                     <tbody id="bodyMonitor"></tbody>
                 </table>
             </div>
