@@ -524,9 +524,9 @@
             document.getElementById('bodyPendientes').innerHTML = lista.length > 0 
                 ? lista.map(p => `
                     <tr>
-                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:var(--primary); font-weight:bold;">${p.cod}</td>
-                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; font-size:0.85rem;">${p.nom || '---'}</td>
-                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:#555; text-align:center; white-space:nowrap;"><b>${p.pos || '---'}</b></td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:var(--primary); font-weight:bold; user-select: text; cursor: text;" title="Seleccionar código">${p.cod}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; font-size:0.85rem; user-select: text; cursor: text;" title="Seleccionar producto">${p.nom || '---'}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:#555; text-align:center; white-space:nowrap; user-select: text; cursor: text;" title="Seleccionar ubicación"><b>${p.pos || '---'}</b></td>
                     </tr>
                 `).join('')
                 : '<tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">¡Todo listo! No hay códigos pendientes.</td></tr>';
