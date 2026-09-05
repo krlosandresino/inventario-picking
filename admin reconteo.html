@@ -56,8 +56,9 @@
             conteo1 = {};
             const d = snap.val() || {};
             for(let k in d) {
-                if(!conteo1[d[k].cod]) conteo1[d[k].cod] = 0;
-                conteo1[d[k].cod] += parseFloat(d[k].cant || 0);
+                if(!conteo1[d[k].cod]) conteo1[d[k].cod] = { cant: 0, usuarios: new Set() };
+                conteo1[d[k].cod].cant += parseFloat(d[k].cant || 0);
+                if (d[k].usuario) conteo1[d[k].cod].usuarios.add(d[k].usuario);
             }
             procesarTablaComparativa();
         });
@@ -86,7 +87,7 @@
         };
 
         function actualizarIconosOrden() {
-            const columnas = ['cod', 'pos', 'teorico', 'fisico1', 'fisico2', 'difFinal', 'usuario'];
+            const columnas = ['usuario1', 'cod', 'pos', 'teorico', 'fisico1', 'fisico2', 'difFinal', 'usuario'];
             columnas.forEach(c => {
                 let span = document.getElementById('sort-' + c);
                 if (span) {
@@ -104,7 +105,7 @@
             
             let descuadradosData = [];
             let reconteosCompletados = 0;
-            let noCoinciden = 0; // Contador para la nueva tarjeta
+            let noCoinciden = 0; 
             
             // --- NUEVAS ESTADISTICAS DE PRECISION ---
             let adminStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
@@ -116,7 +117,8 @@
                 let teorico = parseFloat(maestroItem.stock || 0);
                 
                 let fueContado1 = conteo1[cod] !== undefined;
-                let fisico1 = fueContado1 ? conteo1[cod] : 0;
+                let fisico1 = fueContado1 ? conteo1[cod].cant : 0;
+                let userConteo1 = fueContado1 ? Array.from(conteo1[cod].usuarios).join(', ') : "---";
                 
                 let reconteoObj = conteo2[cod];
                 let fueContado2 = reconteoObj !== undefined;
@@ -161,6 +163,7 @@
                 // Si hay descuadre O el código quedó pendiente en el primer conteo
                 if (!fueContado1 || fisico1 !== teorico) {
                     descuadradosData.push({
+                        usuario1: userConteo1,
                         cod: cod, pos: maestroItem.pos,
                         teorico: teorico,
                         fisico1: fisico1, dif1: fisico1 - teorico,
@@ -231,6 +234,7 @@
                 
                 return `
                     <tr>
+                        <td><span class="${reg.usuario1 === '---' ? 'badge-pendiente' : 'user-pill'}">${reg.usuario1}</span></td>
                         <td style="user-select: text; cursor: text;" title="Seleccionar código"><b>${reg.cod}</b></td>
                         <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
                         <td align="center">${reg.teorico}</td>
@@ -295,7 +299,7 @@
                 let teorico = parseFloat(maestroItem.stock || 0);
                 
                 let fueContado = conteo1[cod] !== undefined;
-                let fisico1 = fueContado ? conteo1[cod] : 0;
+                let fisico1 = fueContado ? conteo1[cod].cant : 0;
                 
                 let fisico2 = conteo2[cod].cant;
                 let difFinal = fisico2 - teorico;
@@ -348,11 +352,11 @@
                 let cumpleEstado = true;
                 
                 const celdas = fila.querySelectorAll('td');
-                if (celdas.length >= 7) {
-                    const difFinalText = celdas[5].innerText.trim();
+                if (celdas.length >= 8) {
+                    const difFinalText = celdas[6].innerText.trim();
                     // Extraemos solo el valor numérico base del 1er Conteo (sin el pequeño diferencial entre paréntesis)
-                    const conteo1Text = celdas[3].innerText.split('(')[0].trim(); 
-                    const reconteoText = celdas[4].innerText.trim();
+                    const conteo1Text = celdas[4].innerText.split('(')[0].trim(); 
+                    const reconteoText = celdas[5].innerText.trim();
                     
                     if (filtroEstadoReconteo === 'resueltos') {
                         if (difFinalText !== "0" && difFinalText !== "+0" && difFinalText !== "-0") {
@@ -376,21 +380,22 @@
         // Exportación directa a Excel real
         window.descargarExcel = () => {
             const filas = document.querySelectorAll('#bodyMonitor tr');
-            let data = [["Código", "Ubicación", "Stock", "1er Conteo", "Reconteo Final", "Dif. Final", "Operador Reconteo"]];
+            let data = [["Op. 1er Conteo", "Código", "Ubicación", "Stock", "1er Conteo", "Reconteo Final", "Dif. Final", "Operador Reconteo"]];
             
             filas.forEach(fila => {
                 if (fila.style.display !== "none") {
                     const celdas = fila.querySelectorAll('td');
-                    if (celdas.length >= 7) {
-                        const codigo = celdas[0].innerText.trim();
-                        const ubicacion = celdas[1].innerText.trim();
-                        const teorico = celdas[2].innerText.trim();
-                        const conteo1 = celdas[3].innerText.trim().replace(/\n/g, ' ').replace(/\s+/g, ' '); 
-                        const conteo2 = celdas[4].innerText.trim();
-                        const difFinal = celdas[5].innerText.trim();
-                        const operador = celdas[6].innerText.trim();
+                    if (celdas.length >= 8) {
+                        const operador1 = celdas[0].innerText.trim();
+                        const codigo = celdas[1].innerText.trim();
+                        const ubicacion = celdas[2].innerText.trim();
+                        const teorico = celdas[3].innerText.trim();
+                        const conteo1 = celdas[4].innerText.trim().replace(/\n/g, ' ').replace(/\s+/g, ' '); 
+                        const conteo2 = celdas[5].innerText.trim();
+                        const difFinal = celdas[6].innerText.trim();
+                        const operador = celdas[7].innerText.trim();
                         
-                        data.push([codigo, ubicacion, teorico, conteo1, conteo2, difFinal, operador]);
+                        data.push([operador1, codigo, ubicacion, teorico, conteo1, conteo2, difFinal, operador]);
                     }
                 }
             });
@@ -593,7 +598,8 @@
             <table>
                 <thead>
                     <tr>
-                        <th onclick="ordenarPor('cod')" style="cursor:pointer;" title="Clic para ordenar">Código <span id="sort-cod"></span></th>
+                        <th onclick="ordenarPor('usuario1')" style="cursor:pointer; width: 15%;" title="Clic para ordenar">Op. 1er Conteo <span id="sort-usuario1"></span></th>
+                        <th onclick="ordenarPor('cod')" style="cursor:pointer; width: 10%;" title="Clic para ordenar">Código <span id="sort-cod"></span></th>
                         <th onclick="ordenarPor('pos')" style="cursor:pointer;" title="Clic para ordenar">Ubicación <span id="sort-pos"></span></th>
                         <th onclick="ordenarPor('teorico')" style="text-align:center; cursor:pointer;" title="Clic para ordenar">Stock <span id="sort-teorico"></span></th>
                         <th onclick="ordenarPor('fisico1')" style="text-align:center; background:#fef2f2; cursor:pointer;" title="Clic para ordenar">1er Conteo (Registros) <span id="sort-fisico1"></span></th>
