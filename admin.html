@@ -297,9 +297,18 @@
                 return cumpleEstado && cumpleUsuario && cumpleBusqueda;
             });
 
-            document.getElementById('countCuadrados').innerText = contCuadrados;
-            document.getElementById('countFaltantes').innerText = contFaltantes;
-            document.getElementById('countSobrantes').innerText = contSobrantes;
+            // Calculamos el total de registros filtrados para obtener el porcentaje
+            const totalRegistros = contCuadrados + contFaltantes + contSobrantes;
+            
+            // Calculamos el porcentaje redondeado a 1 decimal
+            const pctCuadrados = totalRegistros > 0 ? ((contCuadrados / totalRegistros) * 100).toFixed(1) : 0;
+            const pctFaltantes = totalRegistros > 0 ? ((contFaltantes / totalRegistros) * 100).toFixed(1) : 0;
+            const pctSobrantes = totalRegistros > 0 ? ((contSobrantes / totalRegistros) * 100).toFixed(1) : 0;
+
+            // Actualizamos el texto para mostrar "Cantidad (Porcentaje%)"
+            document.getElementById('countCuadrados').innerText = `${contCuadrados} (${pctCuadrados}%)`;
+            document.getElementById('countFaltantes').innerText = `${contFaltantes} (${pctFaltantes}%)`;
+            document.getElementById('countSobrantes').innerText = `${contSobrantes} (${pctSobrantes}%)`;
 
             itemsCargados = 0;
             document.getElementById('bodyMonitor').innerHTML = "";
