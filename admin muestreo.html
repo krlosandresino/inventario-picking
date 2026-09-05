@@ -30,9 +30,14 @@
         let dataMaestro = [];
         let bateriasGlobal = {};
 
-        // --- VARIABLES SORT ---
+        // --- VARIABLES SORT PRINCIPAL ---
         let sortColumnaGlobal = null;
         let sortDireccionGlobal = 1;
+
+        // --- VARIABLES SORT PENDIENTES ---
+        let sortColumnaPendientes = null;
+        let sortDireccionPendientes = 1;
+        let listaPendientesGlobal = [];
 
         let debounceTimer;
         let registrosGlobales = {};
@@ -440,6 +445,82 @@
             document.getElementById('modalEstadisticas').style.display = 'none';
         };
 
+        // --- FUNCIONES PARA EL MODAL DE PENDIENTES ---
+        window.abrirModalPendientes = () => {
+            const registros = Object.values(registrosGlobales);
+            const codigosRegistrados = new Set(registros.map(reg => String(reg.cod)));
+            
+            listaPendientesGlobal = dataMaestro.filter(m => !codigosRegistrados.has(String(m.cod)));
+            
+            // Reiniciar estado de las flechas de ordenamiento al abrir el modal
+            sortColumnaPendientes = null;
+            sortDireccionPendientes = 1;
+            const ths = document.querySelectorAll('#headPendientes th');
+            ths.forEach(th => th.innerText = th.innerText.replace(' ▲', '').replace(' ▼', ''));
+
+            renderListaPendientes();
+            document.getElementById('modalPendientes').style.display = 'flex';
+        };
+
+        window.cerrarModalPendientes = () => {
+            document.getElementById('modalPendientes').style.display = 'none';
+        };
+
+        // Función que dibuja el contenido del modal de pendientes (necesaria para ordenar en vivo)
+        window.renderListaPendientes = () => {
+            let lista = [...listaPendientesGlobal];
+
+            // Aplicar el ordenamiento si hay una columna seleccionada
+            if (sortColumnaPendientes) {
+                lista.sort((a, b) => {
+                    let valA, valB;
+                    if (sortColumnaPendientes === 'codigo') {
+                        valA = String(a.cod).toLowerCase();
+                        valB = String(b.cod).toLowerCase();
+                    } else if (sortColumnaPendientes === 'producto') {
+                        valA = String(a.nom || '').toLowerCase();
+                        valB = String(b.nom || '').toLowerCase();
+                    } else if (sortColumnaPendientes === 'ubicacion') {
+                        valA = String(a.pos || '').toLowerCase();
+                        valB = String(b.pos || '').toLowerCase();
+                    }
+                    
+                    if (valA < valB) return -1 * sortDireccionPendientes;
+                    if (valA > valB) return 1 * sortDireccionPendientes;
+                    return 0;
+                });
+            }
+
+            document.getElementById('bodyPendientes').innerHTML = lista.length > 0 
+                ? lista.map(p => `
+                    <tr>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:var(--primary); font-weight:bold;">${p.cod}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; font-size:0.85rem;">${p.nom || '---'}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:#555; text-align:center; white-space:nowrap;"><b>${p.pos || '---'}</b></td>
+                    </tr>
+                `).join('')
+                : '<tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">¡Todo listo! No hay códigos pendientes.</td></tr>';
+        };
+
+        window.ordenarTablaPendientes = (columna) => {
+            if (sortColumnaPendientes === columna) {
+                sortDireccionPendientes *= -1; 
+            } else {
+                sortColumnaPendientes = columna;
+                sortDireccionPendientes = 1;
+            }
+
+            const ths = document.querySelectorAll('#headPendientes th[data-col]');
+            ths.forEach(th => {
+                th.innerText = th.innerText.replace(' ▲', '').replace(' ▼', '');
+                if (th.getAttribute('data-col') === columna) {
+                    th.innerText += sortDireccionPendientes === 1 ? ' ▲' : ' ▼';
+                }
+            });
+
+            renderListaPendientes();
+        };
+
     </script>
     <style>
         :root { --primary: #4361ee; --bg: #f4f7fe; --danger: #e71d36; --success: #2ec4b6; --warning: #f9ab00; }
@@ -506,7 +587,12 @@
 
     <div class="stats-grid">
         <div class="stat-card"><span>SKU</span><h2 id="totalMaestro">0</h2></div>
-        <div class="stat-card" style="border-color: var(--warning);"><span>PENDIENTES</span><h2 id="pendientes">0</h2></div>
+        
+        <!-- SE AGREGÓ EL EVENTO ONCLICK Y EL CURSOR A LA TARJETA DE PENDIENTES -->
+        <div class="stat-card" style="border-color: var(--warning); cursor: pointer;" onclick="abrirModalPendientes()" title="Ver lista de códigos pendientes">
+            <span>PENDIENTES</span><h2 id="pendientes">0</h2>
+        </div>
+        
         <div class="stat-card" style="border-color: var(--danger);"><span>Usuarios Registrados</span><h2 id="countUsuarios">0</h2></div>
     </div>
 
@@ -573,6 +659,31 @@
                     </tr>
                 </thead>
                 <tbody id="bodyEstadisticas">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PARA VER LOS PENDIENTES CON ORDENAMIENTO -->
+<div id="modalPendientes" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
+    <div style="background:white; padding:25px; border-radius:15px; width:600px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0; color: var(--warning);">⏳ Códigos Pendientes</h2>
+            <button onclick="cerrarModalPendientes()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
+        </div>
+        
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table style="width:100%; border-collapse:collapse;">
+                <thead id="headPendientes" style="position: sticky; top: 0; background: white; z-index: 1;">
+                    <tr>
+                        <th data-col="codigo" onclick="ordenarTablaPendientes('codigo')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Código">Código</th>
+                        <th data-col="producto" onclick="ordenarTablaPendientes('producto')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Producto">Producto</th>
+                        <!-- Se añadió white-space: nowrap y un min-width a Ubicación para evitar que los textos se salten de línea -->
+                        <th data-col="ubicacion" onclick="ordenarTablaPendientes('ubicacion')" style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; cursor:pointer; user-select:none; white-space:nowrap; min-width: 100px;" title="Ordenar por Ubicación">Ubicación</th>
+                    </tr>
+                </thead>
+                <tbody id="bodyPendientes">
                 </tbody>
             </table>
         </div>
