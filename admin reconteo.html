@@ -226,6 +226,56 @@
             }
         };
 
+        window.borrarCategoriaReconteo = async (categoria, event) => {
+            event.stopPropagation(); // Evita que se active el filtro al hacer clic en el botón flotante
+
+            let pin = prompt("🔒 Ingrese el PIN de seguridad:");
+            if (pin !== "2026") {
+                if (pin !== null) alert("❌ Acceso Denegado: PIN Incorrecto.");
+                return;
+            }
+
+            if (!confirm(`⚠️ ¿Estás seguro de que deseas eliminar TODOS los reconteos de esta categoría para volverlos a contar?`)) return;
+
+            let keysToBorrar = [];
+
+            for (let cod in conteo2) {
+                let maestroItem = dataMaestro[cod] || { stock: 0 };
+                let teorico = parseFloat(maestroItem.stock || 0);
+                
+                let fueContado = conteo1[cod] !== undefined;
+                let fisico1 = fueContado ? conteo1[cod] : 0;
+                
+                let fisico2 = conteo2[cod].cant;
+                let difFinal = fisico2 - teorico;
+
+                let pertenece = false;
+
+                if (categoria === 'resueltos' && difFinal === 0) {
+                    pertenece = true;
+                } else if (categoria === 'confirmados' && difFinal !== 0) {
+                    pertenece = true;
+                } else if (categoria === 'nocoinciden' && fisico2 !== fisico1) {
+                    pertenece = true;
+                }
+
+                if (pertenece) {
+                    keysToBorrar.push(...conteo2[cod].keys);
+                }
+            }
+
+            if (keysToBorrar.length === 0) {
+                alert("No hay registros en esta categoría para eliminar.");
+                return;
+            }
+
+            for (let key of keysToBorrar) {
+                await remove(ref(db, `registros_reconteo/${key}`));
+            }
+            
+            alert(`✅ Se han eliminado correctamente los registros para volver a contar.`);
+        };
+
         window.setFiltroEstadoReconteo = (estado) => {
             filtroEstadoReconteo = filtroEstadoReconteo === estado ? 'todos' : estado; 
             
@@ -343,11 +393,28 @@
         .search-input:focus { border-color: var(--primary); }
         
         /* --- ESTILOS MINI DASHBOARD RECONTEO --- */
-        .mini-dashboard { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; } /* Se agregó flex-wrap para pantallas más pequeñas */
-        .mini-card { flex: 1; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.85rem; cursor:pointer; transition: opacity 0.3s; }
+        .mini-dashboard { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+        /* Se añade position relative para el botón flotante */
+        .mini-card { flex: 1; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.85rem; cursor:pointer; transition: opacity 0.3s; position: relative; }
         .mc-resueltos { background: #e6f9f7; color: var(--success); border: 1px solid #c0f0eb; }
         .mc-confirmados { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
         .mc-nocoinciden { background: #f3e8ff; color: var(--purple); border: 1px solid #d8b4fe; }
+
+        /* Estilo del botón flotante de borrado */
+        .btn-mini-del {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn-mini-del:hover {
+            transform: translateY(-50%) scale(1.2);
+        }
     </style>
 </head>
 <body>
@@ -392,9 +459,18 @@
         </div>
         
         <div class="mini-dashboard">
-            <div class="mini-card mc-resueltos" onclick="setFiltroEstadoReconteo('resueltos')" title="Filtrar Descuadres Resueltos">✅ Descuadre Resuelto <span id="countResueltos"></span></div>
-            <div class="mini-card mc-confirmados" onclick="setFiltroEstadoReconteo('confirmados')" title="Filtrar Descuadres Confirmados">⚠️ Descuadre Confirmado <span id="countConfirmados"></span></div>
-            <div class="mini-card mc-nocoinciden" onclick="setFiltroEstadoReconteo('nocoinciden')" title="Filtrar códigos que no coincidieron con el 1er conteo">❌ No Coincide 1er Conteo <span id="countNoCoincidenBtn"></span></div>
+            <div class="mini-card mc-resueltos" onclick="setFiltroEstadoReconteo('resueltos')" title="Filtrar Descuadres Resueltos">
+                ✅ Descuadre Resuelto <span id="countResueltos"></span>
+                <button class="btn-mini-del" onclick="borrarCategoriaReconteo('resueltos', event)" title="Borrar reconteos resueltos para re-contar">🗑️</button>
+            </div>
+            <div class="mini-card mc-confirmados" onclick="setFiltroEstadoReconteo('confirmados')" title="Filtrar Descuadres Confirmados">
+                ⚠️ Descuadre Confirmado <span id="countConfirmados"></span>
+                <button class="btn-mini-del" onclick="borrarCategoriaReconteo('confirmados', event)" title="Borrar reconteos confirmados para re-contar">🗑️</button>
+            </div>
+            <div class="mini-card mc-nocoinciden" onclick="setFiltroEstadoReconteo('nocoinciden')" title="Filtrar códigos que no coincidieron con el 1er conteo">
+                ❌ No Coincide 1er Conteo <span id="countNoCoincidenBtn"></span>
+                <button class="btn-mini-del" onclick="borrarCategoriaReconteo('nocoinciden', event)" title="Borrar reconteos que no coinciden para re-contar">🗑️</button>
+            </div>
         </div>
         
         <input type="text" id="busquedaRealTime" class="search-input" placeholder="🔍 Buscar por código, ubicación o usuario..." oninput="ejecutarFiltro()">
