@@ -441,6 +441,50 @@
         window.cerrarModalPendientes = () => {
             document.getElementById('modalPendientes').style.display = 'none';
         };
+
+        // --- Funciones para Modal de Estadísticas ---
+        window.abrirModalEstadisticas = () => {
+            const stats = {};
+
+            // Inicializar usuarios y calcular estadísticas de reconteo
+            for (let cod in conteo2) {
+                let reconteoObj = conteo2[cod];
+                let maestroItem = dataMaestro[cod];
+                let teorico = maestroItem ? parseFloat(maestroItem.stock || 0) : 0;
+                let fisico = reconteoObj.cant;
+                let dif = fisico - teorico;
+
+                reconteoObj.usuarios.forEach(user => {
+                    if (!stats[user]) {
+                        stats[user] = { procesados: 0, cuadrados: 0, faltantes: 0, sobrantes: 0 };
+                    }
+                    stats[user].procesados++;
+                    if (dif === 0) stats[user].cuadrados++;
+                    else if (dif < 0) stats[user].faltantes++;
+                    else if (dif > 0) stats[user].sobrantes++;
+                });
+            }
+            
+            const ordenado = Object.entries(stats).sort((a, b) => b[1].procesados - a[1].procesados);
+            
+            document.getElementById('bodyEstadisticas').innerHTML = ordenado.length > 0 
+                ? ordenado.map(([user, data]) => `
+                    <tr>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0;"><b>${user}</b></td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--primary); font-weight:bold;">${data.procesados}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--success); font-weight:bold;">${data.cuadrados}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--danger); font-weight:bold;">${data.faltantes}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; color:var(--warning); font-weight:bold;">${data.sobrantes}</td>
+                    </tr>
+                `).join('')
+                : '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No hay datos registrados aún en reconteo.</td></tr>';
+                
+            document.getElementById('modalEstadisticas').style.display = 'flex';
+        };
+
+        window.cerrarModalEstadisticas = () => {
+            document.getElementById('modalEstadisticas').style.display = 'none';
+        };
     </script>
     <style>
         :root { --primary: #4361ee; --bg: #f4f7fe; --danger: #e71d36; --success: #2ec4b6; --warning: #ffb703; --purple: #8b5cf6;}
@@ -470,6 +514,9 @@
         
         .btn-danger-main { background: var(--danger); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .btn-danger-main:hover { background: #c9182b; }
+        .btn-purple-main { background: var(--purple); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; transition: transform 0.1s ease; }
+        .btn-purple-main:hover { background: #7c3aed; }
+        .btn-purple-main:active { transform: scale(0.95); }
         .btn-copy-excel { background: #15803d; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; transition: background 0.2s;}
         .btn-copy-excel:hover { background: #166534; }
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; box-sizing: border-box;}
@@ -517,7 +564,10 @@
 <div id="adminMain" style="display:none;">
     <div class="header">
         <h2 style="margin:0;">📊 Panel de Control: Reconteo</h2>
-        <button class="btn-danger-main" onclick="borrarTodoReconteo()">🗑️ ELIMINAR TODO EL RECONTEO</button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button class="btn-purple-main" onclick="abrirModalEstadisticas()">📊 VER PRODUCTIVIDAD</button>
+            <button class="btn-danger-main" onclick="borrarTodoReconteo()">🗑️ ELIMINAR TODO EL RECONTEO</button>
+        </div>
     </div>
 
     <div class="stats-grid">
@@ -646,7 +696,7 @@
     </div>
 </div>
 
-<!-- NUEVO HTML MODAL (PANTALLA FLOTANTE) AL ESTILO DE LA IMAGEN SOLICITADA Y ANCHO AJUSTADO -->
+<!-- MODAL CÓDIGOS PENDIENTES -->
 <div id="modalPendientes" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2000; align-items: center; justify-content: center;">
     <div style="background: white; border-radius: 12px; width: 95%; max-width: 400px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
         
@@ -669,6 +719,31 @@
                 </thead>
                 <tbody id="listaCodigosPendientes">
                     <!-- Aquí se inyectan los códigos vía JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- NUEVO MODAL ESTADÍSTICAS RECONTEO -->
+<div id="modalEstadisticas" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
+    <div style="background:white; padding:25px; border-radius:15px; width:550px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0;">📊 Productividad Reconteo</h2>
+            <button onclick="cerrarModalEstadisticas()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
+        </div>
+        <div style="max-height: 400px; overflow-y: auto;" class="custom-scroll">
+            <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">Operador</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">Procesados</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">✅ Cuad.</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">⬇️ Falt.</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">⬆️ Sobr.</th>
+                    </tr>
+                </thead>
+                <tbody id="bodyEstadisticas">
                 </tbody>
             </table>
         </div>
