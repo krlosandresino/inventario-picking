@@ -107,8 +107,8 @@
                 
                 return `
                     <tr>
-                        <td><b>${reg.cod}</b></td>
-                        <td><b style="color:#4361ee">${reg.pos}</b></td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar código"><b>${reg.cod}</b></td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
                         <td align="center">${reg.teorico}</td>
                         <td align="center" style="background:#fef2f2;">${reg.fisico1} <small style="color:${colorDif1}">(${reg.dif1 > 0 ? '+'+reg.dif1 : reg.dif1})</small></td>
                         <td align="center" style="background:#eff6ff; font-weight:bold;">${reg.fisico2}</td>
