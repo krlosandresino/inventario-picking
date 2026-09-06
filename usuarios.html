@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👨‍💻 Admin - Usuarios</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+            authDomain: "inventariopicking.firebaseapp.com",
+            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+            projectId: "inventariopicking",
+            storageBucket: "inventariopicking.firebasestorage.app",
+            messagingSenderId: "92946062722",
+            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const dbRefUsuarios = ref(db, 'usuarios_auth');
+
+        window.crearUsuario = () => {
+            const user = document.getElementById('nuevoUsuario').value.trim().toUpperCase();
+            const pin = document.getElementById('nuevoPin').value.trim();
+            const chkPicking = document.getElementById('chkPicking').checked;
+            const chkMuestreo = document.getElementById('chkMuestreo').checked;
+            const chkReconteo = document.getElementById('chkReconteo').checked;
+
+            if (!user || !pin) {
+                alert("Por favor, ingrese un nombre de usuario y un PIN.");
+                return;
+            }
+
+            set(ref(db, 'usuarios_auth/' + user), {
+                pin: pin,
+                accesos: {
+                    picking: chkPicking,
+                    muestreo: chkMuestreo,
+                    reconteo: chkReconteo
+                }
+            }).then(() => {
+                alert("Usuario " + user + " creado exitosamente.");
+                document.getElementById('nuevoUsuario').value = "";
+                document.getElementById('nuevoPin').value = "";
+                document.getElementById('chkPicking').checked = false;
+                document.getElementById('chkMuestreo').checked = false;
+                document.getElementById('chkReconteo').checked = false;
+                document.getElementById('nuevoUsuario').focus(); // Regresa el foco para seguir creando usuarios
+            }).catch(e => alert("Error al crear usuario: " + e));
+        };
+
+        window.eliminarUsuario = (user) => {
+            if(confirm("¿Seguro que deseas eliminar el acceso al usuario " + user + "?")) {
+                remove(ref(db, 'usuarios_auth/' + user));
+            }
+        };
+
+        onValue(dbRefUsuarios, (snapshot) => {
+            const data = snapshot.val();
+            const tabla = document.getElementById('cuerpoUsuarios');
+            tabla.innerHTML = "";
+            let total = 0;
+            
+            if (data) {
+                total = Object.keys(data).length; // Contabilizar los usuarios registrados
+                
+                Object.keys(data).forEach(user => {
+                    const info = data[user];
+                    const accesosText = [
+                        info.accesos.picking ? "Picking" : "",
+                        info.accesos.muestreo ? "Muestreo" : "",
+                        info.accesos.reconteo ? "Reconteo" : ""
+                    ].filter(Boolean).join(", ") || "Ninguno";
+
+                    tabla.innerHTML += `
+                        <tr>
+                            <td style="font-weight:bold;">${user}</td>
+                            <td>${info.pin}</td>
+                            <td style="font-size:0.75rem; color:#666;">${accesosText}</td>
+                            <td style="text-align:center;">
+                                <button style="border:none; background:none; cursor:pointer;" onclick="eliminarUsuario('${user}')">🗑️</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            // Actualizar el texto del contador en pantalla
+            document.getElementById('totalUsuarios').innerText = `(${total})`;
+        });
+    </script>
+    <style>
+        :root { --primary: #1a73e8; --danger: #d93025; --bg: #f8f9fa; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 500px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        h2 { margin-top: 0; color: #333; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        .checkbox-group { display: flex; gap: 15px; margin: 10px 0; font-size: 0.9rem; font-weight: bold; color: #555; }
+        .btn-main { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 10px; }
+        th, td { padding: 10px 5px; border-bottom: 1px solid #eee; text-align: left; }
+    </style>
+</head>
+<body>
+
+<!-- PANTALLA DE ACCESO -->
+<div class="container" id="loginScreen" style="margin-top: 10vh;">
+    <h2 style="justify-content: center;">🔒 Acceso Restringido</h2>
+    <input type="text" id="accesoUsuario" placeholder="Usuario" autocomplete="off">
+    <input type="password" id="accesoClave" placeholder="Contraseña">
+    <button class="btn-main" onclick="verificarAcceso()">INGRESAR</button>
+    <div id="msjError" style="color: var(--danger); font-size: 0.9rem; text-align: center; margin-top: 10px; font-weight: bold; display: none;">Credenciales incorrectas</div>
+</div>
+
+<!-- CONTENIDO DE LA APLICACIÓN (Oculto por defecto) -->
+<div id="mainApp" style="display: none; width: 100%; flex-direction: column; align-items: center;">
+    <div class="container">
+        <h2>👨‍💻 Crear Nuevo Operador</h2>
+        <input type="text" id="nuevoUsuario" placeholder="Nombre de Usuario" autocomplete="off" oninput="this.value = this.value.toUpperCase()">
+        <input type="password" id="nuevoPin" placeholder="Asignar PIN numérico" autocomplete="off" inputmode="numeric">
+        
+        <div style="font-size:0.8rem; color:#666; margin-top:10px;">Permisos de Acceso:</div>
+        <div class="checkbox-group">
+            <label><input type="checkbox" id="chkPicking"> Picking</label>
+            <label><input type="checkbox" id="chkMuestreo"> Muestreo</label>
+            <label><input type="checkbox" id="chkReconteo"> Reconteo</label>
+        </div>
+        
+        <button class="btn-main" onclick="crearUsuario()">GUARDAR USUARIO</button>
+    </div>
+
+    <div class="container">
+        <h2>
+            <span>👥 Usuarios Registrados</span>
+            <span id="totalUsuarios" style="color: var(--primary); font-size: 1.1rem; font-weight: bold;">(0)</span>
+        </h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Usuario</th>
+                    <th>PIN</th>
+                    <th>Accesos</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="cuerpoUsuarios"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Lógica para el sistema de acceso
+    function verificarAcceso() {
+        const usu = document.getElementById('accesoUsuario').value.trim();
+        const pwd = document.getElementById('accesoClave').value.trim();
+        
+        if (usu === "Oriflame" && pwd === "2026") {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'flex';
+        } else {
+            document.getElementById('msjError').style.display = 'block';
+        }
+    }
+
+    // Permitir "Enter" en la pantalla de login
+    document.getElementById('accesoUsuario').addEventListener('keydown', (e) => { 
+        if(e.key === 'Enter') { e.preventDefault(); document.getElementById('accesoClave').focus(); }
+    });
+    document.getElementById('accesoClave').addEventListener('keydown', (e) => { 
+        if(e.key === 'Enter') { e.preventDefault(); verificarAcceso(); }
+    });
+
+    // Permitir salto con "Enter" del usuario al PIN (lógica original)
+    document.getElementById('nuevoUsuario').addEventListener('keydown', (e) => { 
+        if(e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('nuevoPin').focus(); 
+        }
+    });
+    
+    // Permitir guardar al presionar "Enter" estando en el PIN (lógica original)
+    document.getElementById('nuevoPin').addEventListener('keydown', (e) => { 
+        if(e.key === 'Enter') {
+            e.preventDefault();
+            crearUsuario(); 
+        }
+    });
+</script>
+</body>
+</html>

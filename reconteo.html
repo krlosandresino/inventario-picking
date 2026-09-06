@@ -6,7 +6,7 @@
     <title>🔍 Operarios - Reconteo</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        import { getDatabase, ref, push, onValue, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -21,10 +21,9 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         
-        // Referencias independientes
         const dbRefMaestro = ref(db, 'maestro');
-        const dbRefRegistros1 = ref(db, 'registros'); // Primer conteo (solo lectura)
-        const dbRefReconteo = ref(db, 'registros_reconteo'); // Segundo conteo (escritura)
+        const dbRefRegistros1 = ref(db, 'registros'); 
+        const dbRefReconteo = ref(db, 'registros_reconteo'); 
 
         let inventarioMaestro = {};
         let conteo1Agrupado = {};
@@ -32,14 +31,12 @@
         let usuarioActual = "";
         let itemSeleccionado = null;
 
-        // --- MODO OSCURO ---
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
             const btn = document.getElementById('btnDarkMode');
             btn.innerText = document.body.classList.contains('dark-mode') ? '☀️ Modo Claro' : '🌙 Modo Oscuro';
         };
 
-        // --- ZONA CIEGA ---
         window.addEventListener('offline', () => {
             document.getElementById('statusInv').innerText = "⚠️ SIN CONEXIÓN";
             document.getElementById('statusInv').style.color = "var(--danger)";
@@ -49,7 +46,6 @@
             document.getElementById('statusInv').style.color = "#666";
         });
 
-        // --- WAKE LOCK ---
         let wakeLock = null;
         const solicitarWakeLock = async () => {
             if ('wakeLock' in navigator) {
@@ -64,27 +60,63 @@
 
         window.iniciarSesionOp = () => {
             const user = document.getElementById('userOp').value.trim();
-            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
-            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
-            document.getElementById('loginOverlayOp').style.display = 'none';
-            solicitarWakeLock();
+            const pin = document.getElementById('pinOp').value.trim();
+            const btnLogin = document.querySelector('.btn-login-op');
+            
+            if (!user || !pin) {
+                alert("Ingrese su usuario y PIN.");
+                return;
+            }
+
+            // --- INICIO DE FEEDBACK VISUAL ---
+            btnLogin.innerText = "⏳ VALIDANDO...";
+            btnLogin.disabled = true;
+            btnLogin.style.opacity = "0.7";
+            // --- FIN DE FEEDBACK VISUAL ---
+
+            const usuarioFormat = user.toUpperCase();
+            
+            get(ref(db, 'usuarios_auth/' + usuarioFormat)).then((snapshot) => {
+                // Restaurar botón
+                btnLogin.innerText = "ENTRAR";
+                btnLogin.disabled = false;
+                btnLogin.style.opacity = "1";
+
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    if (data.pin === pin && data.accesos && data.accesos.reconteo) {
+                        usuarioActual = usuarioFormat;
+                        document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+                        document.getElementById('loginOverlayOp').style.display = 'none';
+                        solicitarWakeLock();
+                    } else {
+                        alert("Acceso denegado. PIN incorrecto o no tiene permisos para el módulo de Reconteo.");
+                    }
+                } else {
+                    alert("El usuario no existe. Solicite acceso al administrador.");
+                }
+            }).catch(e => {
+                // Restaurar botón en caso de error
+                btnLogin.innerText = "ENTRAR";
+                btnLogin.disabled = false;
+                btnLogin.style.opacity = "1";
+                alert("Error de conexión al validar usuario.");
+            });
         };
 
-        // --- OPTIMIZACIÓN DE RENDIMIENTO (DEBOUNCE) ---
         let debounceTimer = null;
         function calcularPendientesDebounced() {
-            clearTimeout(debounceTimer); // Borra el temporizador anterior si hay otra actualización rápida
+            clearTimeout(debounceTimer); 
             debounceTimer = setTimeout(() => {
-                calcularPendientes(); // Ejecuta la actualización real del DOM después de 300ms de calma
+                calcularPendientes(); 
             }, 300);
         }
 
-        // --- LECTURA DE BASES DE DATOS ---
         onValue(dbRefMaestro, (snap) => {
             const data = snap.val() || [];
             inventarioMaestro = {};
             data.forEach(item => { if(item.cod) inventarioMaestro[item.cod] = item; });
-            calcularPendientesDebounced(); // Uso de función debounceada
+            calcularPendientesDebounced(); 
         });
 
         onValue(dbRefRegistros1, (snap) => {
@@ -95,7 +127,7 @@
                 if (!conteo1Agrupado[cod]) conteo1Agrupado[cod] = 0;
                 conteo1Agrupado[cod] += parseFloat(data[k].cant || 0);
             }
-            calcularPendientesDebounced(); // Uso de función debounceada
+            calcularPendientesDebounced(); 
         });
 
         onValue(dbRefReconteo, (snap) => {
@@ -103,16 +135,15 @@
             reconteoAgrupado = {};
             for (let k in data) {
                 let cod = data[k].cod;
-                reconteoAgrupado[cod] = true; // Solo necesitamos saber si ya fue recontado
+                reconteoAgrupado[cod] = true; 
             }
-            calcularPendientesDebounced(); // Uso de función debounceada
+            calcularPendientesDebounced(); 
         });
 
         function calcularPendientes() {
             if (Object.keys(inventarioMaestro).length === 0) return;
             const listaDescuadrados = [];
 
-            // Evaluamos desde el inventario maestro completo
             for (let cod in inventarioMaestro) {
                 let maestroItem = inventarioMaestro[cod];
                 let teorico = parseFloat(maestroItem.stock || 0);
@@ -120,7 +151,6 @@
                 let fueContado = conteo1Agrupado[cod] !== undefined;
                 let fisico1 = fueContado ? conteo1Agrupado[cod] : 0;
                 
-                // Si no fue contado, o si fue contado y hay descuadre, y AÚN NO ha sido recontado
                 if ((!fueContado || fisico1 !== teorico) && !reconteoAgrupado[cod]) {
                     listaDescuadrados.push({
                         cod: cod, pos: maestroItem.pos, nom: maestroItem.nom
@@ -131,9 +161,8 @@
             listaDescuadrados.sort((a, b) => a.pos.localeCompare(b.pos));
             document.getElementById('totalDescuadres').innerText = `Pendientes: ${listaDescuadrados.length}`;
             
-            // --- OPTIMIZACIÓN DOM ---
             const contenedorLista = document.getElementById('listaReconteo');
-            contenedorLista.innerHTML = ''; // Limpiar contenedor
+            contenedorLista.innerHTML = ''; 
             
             if(listaDescuadrados.length === 0) {
                 const divVacio = document.createElement('div');
@@ -141,7 +170,7 @@
                 divVacio.innerText = "¡No hay reconteos pendientes!";
                 contenedorLista.appendChild(divVacio);
             } else {
-                const fragment = document.createDocumentFragment(); // Optimización: Crear fragmento en memoria
+                const fragment = document.createDocumentFragment(); 
                 
                 listaDescuadrados.forEach((item) => {
                     const objStr = encodeURIComponent(JSON.stringify(item));
@@ -183,7 +212,7 @@
                     fragment.appendChild(card);
                 });
                 
-                contenedorLista.appendChild(fragment); // Inserción única al DOM
+                contenedorLista.appendChild(fragment); 
             }
         }
 
@@ -199,7 +228,6 @@
 
         window.cerrarModalReconteo = () => { document.getElementById('modalReconteo').style.display = 'none'; itemSeleccionado = null; };
 
-        // --- VALIDACIÓN DE INPUTS Y PROMESA FIREBASE ---
         window.guardarReconteo = () => {
             const inputElement = document.getElementById('cantidadReconteo');
             const cantStr = inputElement.value;
@@ -216,7 +244,6 @@
                 return; 
             } 
             
-            // Se guarda en la NUEVA base (registros_reconteo), capturando el éxito (Promesa)
             push(dbRefReconteo, {
                 cod: itemSeleccionado.cod,
                 nom: itemSeleccionado.nom,
@@ -225,7 +252,7 @@
                 fecha: new Date().toLocaleString(),
                 usuario: usuarioActual
             }).then(() => {
-                if (navigator.vibrate) navigator.vibrate(100); // NUEVO: Confirmación por vibración
+                if (navigator.vibrate) navigator.vibrate(100); 
                 mostrarToast(`✅ ${itemSeleccionado.cod} guardado (${cantStr} unds)`);
                 cerrarModalReconteo();
             }).catch((error) => {
@@ -233,7 +260,6 @@
             });
         };
 
-        // --- FUNCIÓN PARA EL TOAST ---
         window.mostrarToast = (mensaje) => {
             const toast = document.getElementById("toast");
             toast.innerText = mensaje;
@@ -241,7 +267,6 @@
             setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
         };
 
-        // --- NUEVO: Función para filtrar la lista en el DOM ---
         window.filtrarLista = () => {
             const texto = document.getElementById('buscadorReconteo').value.toUpperCase();
             const tarjetas = document.querySelectorAll('.card-reconteo');
@@ -267,7 +292,7 @@
         #loginOverlayOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
         .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
-        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 15px;}
+        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 15px; transition: opacity 0.3s;}
         
         .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); display:none; justify-content:center; align-items:center; z-index:100; }
         .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 350px; text-align: center; }
@@ -283,7 +308,6 @@
         body.dark-mode .card-reconteo { background: #242424; border-color: #333; }
         body.dark-mode .nom-corto { color: #aaa !important; }
 
-        /* --- ESTILOS PARA EL TOAST --- */
         #toast {
             visibility: hidden;
             min-width: 250px;
@@ -308,7 +332,6 @@
             opacity: 1;
         }
 
-        /* --- NUEVO: Encabezado fijo (Sticky) --- */
         body > .container:nth-of-type(1) {
             position: sticky;
             top: 10px;
@@ -322,6 +345,7 @@
     <div class="login-card-op">
         <h2>🔍 Reconteo de Picking</h2>
         <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off" style="text-align: center;" oninput="this.value = this.value.toUpperCase()">
+        <input type="password" id="pinOp" placeholder="PIN de acceso..." autocomplete="off" inputmode="numeric">
         <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
     </div>
 </div>
@@ -340,7 +364,6 @@
         <span id="totalDescuadres" style="color:var(--danger)">Cargando...</span>
     </div>
     
-    <!-- NUEVO: Buscador en vivo (MODIFICADO SOLO PARA NÚMEROS Y TECLADO NUMÉRICO) -->
     <input type="text" inputmode="numeric" id="buscadorReconteo" placeholder="🔍 Buscar código..." oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarLista();" style="margin-top: 10px; font-size: 0.85rem; padding: 8px;">
 
     <div style="margin-top: 10px; font-size: 0.75rem; color: #666; text-align: center; margin-bottom: 10px;">
@@ -364,11 +387,11 @@
     </div>
 </div>
 
-<!-- Contenedor del Toast -->
 <div id="toast"></div>
 
 <script>
-    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
+    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('pinOp').focus(); });
+    document.getElementById('pinOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
     document.getElementById('cantidadReconteo').addEventListener('keydown', (e) => { if(e.key === 'Enter') guardarReconteo(); });
     document.addEventListener('contextmenu', event => event.preventDefault());
 </script>

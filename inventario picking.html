@@ -28,7 +28,6 @@
         let usuarioActual = "";
         let registroIdCorte = null; 
 
-        // --- INICIO NUEVO: MODO OSCURO (TEXTO) ---
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
             const btn = document.getElementById('btnDarkMode');
@@ -38,9 +37,7 @@
                 btn.innerText = '🌙 Modo Oscuro';
             }
         };
-        // --- FIN NUEVO: MODO OSCURO (TEXTO) ---
 
-        // --- INICIO NUEVO: ZONA CIEGA (ALERTA DE CONEXIÓN) ---
         window.addEventListener('offline', () => {
             const statusLabel = document.getElementById('statusInv');
             statusLabel.innerText = "⚠️ SIN CONEXIÓN";
@@ -55,9 +52,7 @@
             statusLabel.style.fontWeight = "normal";
             statusLabel.classList.remove('blinking-text');
         });
-        // --- FIN NUEVO: ZONA CIEGA ---
 
-        // --- INICIO NUEVO: BEEP AUDITIVO AMIGABLE + VIBRACIÓN ---
         window.emitirSonido = (tipo) => {
             if (navigator.vibrate) {
                 if (tipo === 'ok') { navigator.vibrate(50); } 
@@ -91,9 +86,7 @@
                 }
             } catch(e) { console.log("Audio no soportado"); }
         };
-        // --- FIN NUEVO: BEEP AUDITIVO AMIGABLE + VIBRACIÓN ---
 
-        // --- INICIO NUEVO: WAKE LOCK (MANTENER PANTALLA ENCENDIDA) ---
         let wakeLock = null;
         const solicitarWakeLock = async () => {
             if ('wakeLock' in navigator) {
@@ -104,9 +97,7 @@
         document.addEventListener('visibilitychange', async () => {
             if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
         });
-        // --- FIN NUEVO: WAKE LOCK ---
         
-        // --- INICIO NUEVO: FUNCIÓN PARA LEER Y ENVIAR BATERÍA ---
         window.iniciarMonitorBateria = (nombreUsuario) => {
             if ('getBattery' in navigator) {
                 navigator.getBattery().then(function(battery) {
@@ -124,34 +115,68 @@
                 });
             }
         };
-        // --- FIN NUEVO: FUNCIÓN PARA LEER Y ENVIAR BATERÍA ---
 
         window.onload = () => { document.getElementById('userOp').focus(); };
 
         window.iniciarSesionOp = () => {
             const user = document.getElementById('userOp').value.trim();
-            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
-            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
-            document.getElementById('loginOverlayOp').style.display = 'none';
-            solicitarWakeLock();
+            const pin = document.getElementById('pinOp').value.trim();
+            const btnLogin = document.querySelector('.btn-login-op');
             
-            // --- NUEVO: LLAMAR A LA BATERÍA AL INICIAR SESIÓN ---
-            if (usuarioActual !== "ANÓNIMO") {
-                window.iniciarMonitorBateria(usuarioActual);
+            if (!user || !pin) {
+                alert("Ingrese su usuario y PIN.");
+                return;
             }
-            // ----------------------------------------------------
-            
-            // Forzar actualización visual para aplicar el filtro de usuario inmediatamente en ambas tablas
-            get(dbRefRegistros).then((snapshot) => {
-                renderizadoOptimizado(snapshot.val(), 'cuerpoRegistros', 'ingresos');
-            });
-            get(dbRefIncidencias).then((snapshot) => {
-                renderizadoOptimizado(snapshot.val(), 'cuerpoIncidencias', 'incidencias');
-            });
 
-            if (document.getElementById('sectionPicking').style.display === 'block') {
-                document.getElementById('codigoBuscado').focus();
-            }
+            // --- INICIO DE FEEDBACK VISUAL ---
+            btnLogin.innerText = "⏳ VALIDANDO...";
+            btnLogin.disabled = true;
+            btnLogin.style.opacity = "0.7";
+            // --- FIN DE FEEDBACK VISUAL ---
+
+            const usuarioFormat = user.toUpperCase();
+            
+            get(ref(db, 'usuarios_auth/' + usuarioFormat)).then((snapshot) => {
+                // Restaurar botón
+                btnLogin.innerText = "ENTRAR";
+                btnLogin.disabled = false;
+                btnLogin.style.opacity = "1";
+
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    if (data.pin === pin && data.accesos && data.accesos.picking) {
+                        usuarioActual = usuarioFormat;
+                        document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+                        document.getElementById('loginOverlayOp').style.display = 'none';
+                        solicitarWakeLock();
+                        
+                        if (usuarioActual !== "ANÓNIMO") {
+                            window.iniciarMonitorBateria(usuarioActual);
+                        }
+                        
+                        get(dbRefRegistros).then((snapshot) => {
+                            renderizadoOptimizado(snapshot.val(), 'cuerpoRegistros', 'ingresos');
+                        });
+                        get(dbRefIncidencias).then((snapshot) => {
+                            renderizadoOptimizado(snapshot.val(), 'cuerpoIncidencias', 'incidencias');
+                        });
+
+                        if (document.getElementById('sectionPicking').style.display === 'block') {
+                            document.getElementById('codigoBuscado').focus();
+                        }
+                    } else {
+                        alert("Acceso denegado. PIN incorrecto o no tiene permisos para el módulo de Picking.");
+                    }
+                } else {
+                    alert("El usuario no existe. Solicite acceso al administrador.");
+                }
+            }).catch(e => {
+                // Restaurar botón en caso de error
+                btnLogin.innerText = "ENTRAR";
+                btnLogin.disabled = false;
+                btnLogin.style.opacity = "1";
+                alert("Error de conexión al validar usuario.");
+            });
         };
 
         window.eliminarItem = (path, usuario = '', cod = '', cant = '') => { 
@@ -161,9 +186,7 @@
         };
 
         window.limpiarVistaVisual = () => {
-            // --- INICIO ACTUALIZADO: MENSAJE ACLARATORIO ---
             if(confirm("¿Limpiar tu historial visual en esta pantalla? (No borra datos del servidor)")) {
-            // --- FIN ACTUALIZADO: MENSAJE ACLARATORIO ---
                 get(dbRefRegistros).then((snapshot) => {
                     const data = snapshot.val();
                     if (data) {
@@ -175,19 +198,18 @@
             }
         };
 
-        // --- INICIO NUEVO: FUNCIÓN CERRAR SESIÓN ---
         window.cerrarSesionOp = () => {
             if(confirm("¿Deseas cerrar sesión para abrir otra?")) {
                 usuarioActual = "";
                 document.getElementById('displayUsuario').innerText = "👤 Op: -";
                 document.getElementById('userOp').value = "";
+                document.getElementById('pinOp').value = "";
                 document.getElementById('cuerpoRegistros').innerHTML = "";
                 document.getElementById('cuerpoIncidencias').innerHTML = "";
                 document.getElementById('loginOverlayOp').style.display = 'flex';
                 document.getElementById('userOp').focus();
             }
         };
-        // --- FIN NUEVO: FUNCIÓN CERRAR SESIÓN ---
 
         function actualizarDashboard(registros) {
             if (!inventarioMaestro.length) return;
@@ -222,9 +244,7 @@
 
                 const item = data[key];
                 
-                // --- INICIO NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL EN AMBAS TABLAS ---
                 if (item.usuario !== usuarioActual && usuarioActual !== "") return;
-                // --- FIN NUEVO: FILTRAR HISTORIAL SOLO PARA EL USUARIO ACTUAL EN AMBAS TABLAS ---
 
                 if (tipo === 'ingresos') {
                     const nombreOriginal = item.nom || '';
@@ -343,12 +363,11 @@
         .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
         .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
         .login-card-op input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; text-align: center; }
-        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; transition: opacity 0.3s; }
         
         @keyframes blink-animation { 50% { opacity: 0; } }
         .blinking-text { animation: blink-animation 1s step-start infinite; }
 
-        /* --- INICIO NUEVO: ESTILOS MODO OSCURO --- */
         .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; transition: all 0.3s; text-align: center; }
         
         body.dark-mode { --bg: #121212; color: #e0e0e0; }
@@ -362,7 +381,6 @@
         body.dark-mode td[style*="#666"], body.dark-mode small { color: #aaa !important; }
         body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
         body.dark-mode .progress-container { background: #333; }
-        /* --- FIN NUEVO: ESTILOS MODO OSCURO --- */
     </style>
 </head>
 <body>
@@ -371,6 +389,7 @@
     <div class="login-card-op">
         <h2>👤 Acceso Operador</h2>
         <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off" oninput="this.value = this.value.toUpperCase()">
+        <input type="password" id="pinOp" placeholder="PIN de acceso..." autocomplete="off" inputmode="numeric">
         <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
     </div>
 </div>
@@ -396,7 +415,6 @@
     
     <button class="btn-inc" onclick="abrirModal()">⚠️ Reportar Fuera de Stock</button>
     
-    <!-- CONTENEDOR MODIFICADO PARA ALINEAR AMBOS BOTONES -->
     <div style="display: flex; justify-content: center; gap: 15px;">
         <button class="btn-clear-view" onclick="limpiarVistaVisual()">🧹 LIMPIAR VISTA</button>
         <button class="btn-clear-view" onclick="cerrarSesionOp()">🚪 CERRAR SESIÓN</button>
@@ -432,7 +450,8 @@
 </div>
 
 <script>
-    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
+    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('pinOp').focus(); });
+    document.getElementById('pinOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
     document.getElementById('cantidadContada').addEventListener('keydown', (e) => { if(e.key === 'Enter') registrarEnNube(); });
     document.getElementById('fueracod').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fuerapos').focus(); } });
     document.getElementById('fuerapos').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('fueracant').focus(); } });

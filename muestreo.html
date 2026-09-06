@@ -8,6 +8,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
         import { getDatabase, ref, push, onValue, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
+        // --- CONEXIÓN ORIGINAL PARA DATOS DE MUESTREO ---
         const firebaseConfig = {
             apiKey: "AIzaSyClp2tVcoeIE_ZOedIzP6zyEXEoP9Em0tM",
             authDomain: "chatpareja-3fbce.firebaseapp.com",
@@ -17,16 +18,27 @@
             messagingSenderId: "954583350974",
             appId: "1:954583350974:web:5d082025be24961dd728ef"
         };
-
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
 
+        // --- SEGUNDA CONEXIÓN EXCLUSIVA PARA AUTENTICACIÓN (PANEL ADMIN) ---
+        const firebaseConfigAuth = {
+            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+            authDomain: "inventariopicking.firebaseapp.com",
+            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+            projectId: "inventariopicking",
+            storageBucket: "inventariopicking.firebasestorage.app",
+            messagingSenderId: "92946062722",
+            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+        };
+        const appAuth = initializeApp(firebaseConfigAuth, "authApp");
+        const dbAuth = getDatabase(appAuth);
+
         let inventarioMaestro = [];
         let usuarioActual = "";
 
-        // --- MODO OSCURO ---
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
             const btn = document.getElementById('btnDarkMode');
@@ -37,7 +49,6 @@
             }
         };
 
-        // --- ZONA CIEGA (ALERTA DE CONEXIÓN) ---
         window.addEventListener('offline', () => {
             const statusLabel = document.getElementById('statusInv');
             statusLabel.innerText = "⚠️ SIN CONEXIÓN";
@@ -53,7 +64,6 @@
             statusLabel.classList.remove('blinking-text');
         });
 
-        // --- BEEP AUDITIVO ---
         window.emitirSonido = (tipo) => {
             if (navigator.vibrate) {
                 if (tipo === 'ok') { navigator.vibrate(50); } 
@@ -88,7 +98,6 @@
             } catch(e) { console.log("Audio no soportado"); }
         };
 
-        // --- WAKE LOCK ---
         let wakeLock = null;
         const solicitarWakeLock = async () => {
             if ('wakeLock' in navigator) {
@@ -104,12 +113,51 @@
 
         window.iniciarSesionOp = () => {
             const user = document.getElementById('userOp').value.trim();
-            usuarioActual = user ? user.toUpperCase() : "ANÓNIMO";
-            document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
-            document.getElementById('loginOverlayOp').style.display = 'none';
-            solicitarWakeLock();
+            const pin = document.getElementById('pinOp').value.trim();
+            const btnLogin = document.querySelector('.btn-login-op');
             
-            get(dbRefRegistros).then((snapshot) => actualizarDashboard(snapshot.val()));
+            if (!user || !pin) {
+                alert("Ingrese su usuario y PIN.");
+                return;
+            }
+
+            // --- INICIO DE FEEDBACK VISUAL ---
+            btnLogin.innerText = "⏳ VALIDANDO...";
+            btnLogin.disabled = true;
+            btnLogin.style.opacity = "0.7";
+            // --- FIN DE FEEDBACK VISUAL ---
+
+            const usuarioFormat = user.toUpperCase();
+            
+            // Validamos contra la base de datos centralizada de Auth
+            get(ref(dbAuth, 'usuarios_auth/' + usuarioFormat)).then((snapshot) => {
+                // Restaurar botón
+                btnLogin.innerText = "ENTRAR";
+                btnLogin.disabled = false;
+                btnLogin.style.opacity = "1";
+
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    if (data.pin === pin && data.accesos && data.accesos.muestreo) {
+                        usuarioActual = usuarioFormat;
+                        document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
+                        document.getElementById('loginOverlayOp').style.display = 'none';
+                        solicitarWakeLock();
+                        
+                        get(dbRefRegistros).then((snapshot) => actualizarDashboard(snapshot.val()));
+                    } else {
+                        alert("Acceso denegado. PIN incorrecto o no tiene permisos para el módulo de Muestreo.");
+                    }
+                } else {
+                    alert("El usuario no existe. Solicite acceso al administrador.");
+                }
+            }).catch(e => {
+                // Restaurar botón en caso de error
+                btnLogin.innerText = "ENTRAR";
+                btnLogin.disabled = false;
+                btnLogin.style.opacity = "1";
+                alert("Error de conexión al validar usuario.");
+            });
         };
 
         function actualizarDashboard(registros) {
@@ -142,7 +190,6 @@
 
         onValue(dbRefRegistros, (snap) => actualizarDashboard(snap.val()));
 
-        // --- RENDERIZADO VISUALIZACIÓN MÓVIL OPTIMIZADA ---
         window.renderizarListaMaestro = () => {
             const contenedor = document.getElementById('listaMaestro');
             let html = "";
@@ -177,7 +224,6 @@
             const cant = inputEl.value;
             if (!cant) { emitirSonido('error'); return; } 
             
-            // --- INICIO PREVENCIÓN DOBLE TOQUE ---
             if (inputEl.disabled) return; 
             inputEl.disabled = true;
             inputEl.style.opacity = '0.5';
@@ -185,7 +231,6 @@
                 btnEl.disabled = true;
                 btnEl.style.opacity = '0.5';
             }
-            // --- FIN PREVENCIÓN ---
             
             push(dbRefRegistros, {
                 cod: cod,
@@ -200,7 +245,6 @@
             emitirSonido('ok'); 
             inputEl.value = ""; 
 
-            // --- RESTAURAR DESPUÉS DE 1.5 SEGUNDOS ---
             setTimeout(() => {
                 inputEl.disabled = false;
                 inputEl.style.opacity = '1';
@@ -211,7 +255,6 @@
             }, 1500);
         };
 
-        // --- BUSCADOR DE CÓDIGOS (NUEVA FUNCIÓN) ---
         window.filtrarCodigos = () => {
             const filtro = document.getElementById('buscadorCodigo').value;
             const tarjetas = document.querySelectorAll('.rc-wrapper');
@@ -234,7 +277,6 @@
         .btn-main { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
         .section-title { font-size: 0.8rem; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 10px; }
         
-        /* FIX QUIRÚRGICO: flex-shrink: 0 evita que el scroll aplaste la barra de progreso */
         .progress-container { width: 100%; background: #eee; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden; flex-shrink: 0; }
         .progress-bar { height: 100%; background: var(--success); width: 0%; transition: width 0.5s; }
         
@@ -242,12 +284,11 @@
         .login-card-op { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 90%; max-width: 300px; text-align: center; }
         .login-card-op h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
         .login-card-op input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; text-align: center; }
-        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .btn-login-op { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; transition: opacity 0.3s;}
         
         @keyframes blink-animation { 50% { opacity: 0; } }
         .blinking-text { animation: blink-animation 1s step-start infinite; }
 
-        /* --- MODO OSCURO --- */
         .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; transition: all 0.3s; text-align: center; }
         
         body.dark-mode { --bg: #121212; color: #e0e0e0; }
@@ -260,7 +301,6 @@
         body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
         body.dark-mode .progress-container { background: #333; }
 
-        /* --- CLASES REFACTORIZADAS (Limpieza en línea) --- */
         .rc-wrapper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; margin-bottom: 6px; }
         .rc-info-col { display: flex; flex-direction: column; flex: 1; min-width: 150px; overflow: hidden; }
         .rc-cod-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
@@ -270,18 +310,16 @@
         .rc-input { margin:0; padding: 10px 5px; width: 65px; font-size: 1rem; text-align: center; font-weight:bold; transition: opacity 0.3s; }
         .rc-btn { padding: 10px 15px; width: auto; font-size: 0.9rem; border-radius: 6px; transition: opacity 0.3s; }
 
-        /* --- INICIO: ENCABEZADO FIJO (Modificación Quirúrgica CSS) --- */
         body {
-            height: 100dvh; /* dVH optimiza la altura en móviles con teclados virtuales */
-            overflow: hidden; /* Bloquea el scroll de la página completa */
+            height: 100dvh; 
+            overflow: hidden; 
         }
         .container {
-            max-height: calc(100dvh - 20px); /* Resta el padding del body */
+            max-height: calc(100dvh - 20px); 
             display: flex;
             flex-direction: column;
         }
         
-        /* Protegemos los elementos de la cabecera para que el Flex no los distorsione */
         .container > div:first-child, .container > center { flex-shrink: 0; }
 
         #sectionPicking {
@@ -289,21 +327,18 @@
             overflow: hidden;
             margin-bottom: 5px; 
         }
-        /* Interceptamos el cambio de estado del JavaScript sin tocar la lógica */
         #sectionPicking[style*="display: block"] {
             display: flex !important;
         }
         #listaMaestro {
-            overflow-y: auto !important; /* El scroll ocurre SOLO dentro de tu lista */
+            overflow-y: auto !important; 
             flex: 1 1 auto;
-            padding-right: 5px; /* Espacio para que el scroll no toque los botones */
-            padding-bottom: 15px; /* Margen para que la última tarjeta se vea completa */
+            padding-right: 5px; 
+            padding-bottom: 15px; 
         }
-        /* Scrollbar estético y delgado para móviles */
         #listaMaestro::-webkit-scrollbar { width: 4px; }
         #listaMaestro::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
         body.dark-mode #listaMaestro::-webkit-scrollbar-thumb { background: #555; }
-        /* --- FIN: ENCABEZADO FIJO --- */
     </style>
 </head>
 <body>
@@ -312,6 +347,7 @@
     <div class="login-card-op">
         <h2>👤 Acceso Operador</h2>
         <input type="text" id="userOp" placeholder="Ingrese su nombre..." autocomplete="off" oninput="this.value = this.value.toUpperCase()">
+        <input type="password" id="pinOp" placeholder="PIN de acceso..." autocomplete="off" inputmode="numeric">
         <button class="btn-login-op" onclick="iniciarSesionOp()">ENTRAR</button>
     </div>
 </div>
@@ -328,7 +364,6 @@
     <div id="sectionPicking" style="display:none; margin-top: 15px;">
         <div class="section-title">📋 CODIGOS A INVENTARIAR</div>
         
-        <!-- BUSCADOR DE CÓDIGO (NUEVO ELEMENTO) -->
         <input type="text" id="buscadorCodigo" inputmode="numeric" placeholder="🔍 Buscar código..." 
             oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarCodigos()" 
             style="margin-bottom: 8px;">
@@ -339,7 +374,8 @@
 </div>
 
 <script>
-    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
+    document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('pinOp').focus(); });
+    document.getElementById('pinOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
     document.addEventListener('contextmenu', event => event.preventDefault());
     document.addEventListener('keydown', function(e) {
         if (e.keyCode === 123 || (e.ctrlKey && e.keyCode === 85) || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.shiftKey && e.keyCode === 74) || (e.ctrlKey && e.keyCode === 83)) {
