@@ -121,17 +121,13 @@
                 return;
             }
 
-            // --- INICIO DE FEEDBACK VISUAL ---
             btnLogin.innerText = "⏳ VALIDANDO...";
             btnLogin.disabled = true;
             btnLogin.style.opacity = "0.7";
-            // --- FIN DE FEEDBACK VISUAL ---
 
             const usuarioFormat = user.toUpperCase();
             
-            // Validamos contra la base de datos centralizada de Auth
             get(ref(dbAuth, 'usuarios_auth/' + usuarioFormat)).then((snapshot) => {
-                // Restaurar botón
                 btnLogin.innerText = "ENTRAR";
                 btnLogin.disabled = false;
                 btnLogin.style.opacity = "1";
@@ -152,13 +148,41 @@
                     alert("El usuario no existe. Solicite acceso al administrador.");
                 }
             }).catch(e => {
-                // Restaurar botón en caso de error
                 btnLogin.innerText = "ENTRAR";
                 btnLogin.disabled = false;
                 btnLogin.style.opacity = "1";
                 alert("Error de conexión al validar usuario.");
             });
         };
+
+        window.cerrarSesion = () => {
+            if (confirm("¿Estás seguro de que deseas cerrar sesión?")) {
+                usuarioActual = "";
+                document.getElementById('userOp').value = "";
+                document.getElementById('pinOp').value = "";
+                document.getElementById('displayUsuario').innerText = "👤 Op: -";
+                document.getElementById('loginOverlayOp').style.display = 'flex';
+                if (wakeLock !== null) {
+                    try { wakeLock.release().then(() => { wakeLock = null; }); } 
+                    catch (err) { console.log(err); }
+                }
+            }
+        };
+
+        // --- INICIO NUEVA FUNCIÓN: MOSTRAR TOAST ---
+        window.mostrarToast = (mensaje) => {
+            const toast = document.getElementById('toastNotification');
+            toast.innerText = mensaje;
+            toast.classList.add('show');
+            
+            // Si el usuario guarda muy rápido, reiniciamos el temporizador
+            if (window.toastTimeout) clearTimeout(window.toastTimeout);
+            
+            window.toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        };
+        // --- FIN NUEVA FUNCIÓN ---
 
         function actualizarDashboard(registros) {
             if (!inventarioMaestro.length) return;
@@ -212,7 +236,7 @@
                             class="rc-input"
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                             onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this.nextElementSibling)">
-                        <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this)" class="btn-main rc-btn">💾</button>
+                        <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this)" class="btn-main rc-btn">Registrar</button>
                     </div>
                 </div>`;
             });
@@ -244,6 +268,10 @@
             
             emitirSonido('ok'); 
             inputEl.value = ""; 
+
+            // --- LLAMADA AL TOAST (NOTIFICACIÓN VISUAL) ---
+            mostrarToast(`✅ Guardado: ${cod}`);
+            // ----------------------------------------------
 
             setTimeout(() => {
                 inputEl.disabled = false;
@@ -339,6 +367,30 @@
         #listaMaestro::-webkit-scrollbar { width: 4px; }
         #listaMaestro::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
         body.dark-mode #listaMaestro::-webkit-scrollbar-thumb { background: #555; }
+
+        /* --- ESTILOS AÑADIDOS PARA EL TOAST --- */
+        #toastNotification {
+            position: fixed;
+            bottom: -50px; /* Oculto inicialmente por debajo de la pantalla */
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--success);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 9999;
+            transition: bottom 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55), opacity 0.3s ease;
+            pointer-events: none;
+            opacity: 0;
+        }
+        #toastNotification.show {
+            bottom: 30px; /* Sube a la pantalla */
+            opacity: 1;
+        }
+        /* -------------------------------------- */
     </style>
 </head>
 <body>
@@ -364,14 +416,22 @@
     <div id="sectionPicking" style="display:none; margin-top: 15px;">
         <div class="section-title">📋 CODIGOS A INVENTARIAR</div>
         
+        <center style="margin: 8px 0;">
+            <button onclick="cerrarSesion()" style="background: var(--danger); color: white; border: none; padding: 6px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚪 Cerrar Sesión</button>
+        </center>
+
         <input type="text" id="buscadorCodigo" inputmode="numeric" placeholder="🔍 Buscar código..." 
             oninput="this.value = this.value.replace(/[^0-9]/g, ''); filtrarCodigos()" 
             style="margin-bottom: 8px;">
 
         <div id="listaMaestro" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-            </div>
+        </div>
     </div>
 </div>
+
+<!-- INICIO CONTENEDOR TOAST AÑADIDO -->
+<div id="toastNotification"></div>
+<!-- FIN CONTENEDOR TOAST -->
 
 <script>
     document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('pinOp').focus(); });
