@@ -26,8 +26,8 @@
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
         const dbRefIncidencias = ref(db, 'incidencias_global');
-        
         const dbRefBateria = ref(db, 'baterias_operarios');
+        const dbRefConfigPendientes = ref(db, 'configuracion/enviarPendientes'); 
 
         let dataMaestro = [];
         let rawRegistrosGlobal = {}; 
@@ -36,16 +36,13 @@
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
 
-        // --- VARIABLES SORT PRINCIPAL ---
         let sortColumnaGlobal = null;
         let sortDireccionGlobal = 1;
 
-        // --- VARIABLES SORT PENDIENTES ---
         let sortColumnaPendientes = null;
         let sortDireccionPendientes = 1;
         let listaPendientesGlobal = [];
 
-        // --- VARIABLES LAZY LOADING ---
         let debounceTimer;
         let listaAgrupadaGlobal = [];
         let listaFiltradaGlobal = [];
@@ -59,6 +56,16 @@
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('adminMain').style.display = 'block';
             } else { alert("Acceso Incorrecto"); }
+        };
+
+        onValue(dbRefConfigPendientes, (snapshot) => {
+            const enviar = snapshot.val() === true;
+            const toggle = document.getElementById('togglePendientes');
+            if (toggle) toggle.checked = enviar;
+        });
+
+        window.toggleEnviarPendientes = async (estado) => {
+            await set(dbRefConfigPendientes, estado);
         };
 
         onValue(dbRefMaestro, (snapshot) => {
@@ -475,14 +482,12 @@
             document.getElementById('modalEstadisticas').style.display = 'none';
         };
 
-        // --- FUNCIONES PARA EL MODAL DE PENDIENTES ---
         window.abrirModalPendientes = () => {
             const registros = Object.values(rawRegistrosGlobal);
             const codigosRegistrados = new Set(registros.map(reg => String(reg.cod)));
             
             listaPendientesGlobal = dataMaestro.filter(m => !codigosRegistrados.has(String(m.cod)));
             
-            // Reiniciar estado de las flechas de ordenamiento al abrir el modal
             sortColumnaPendientes = null;
             sortDireccionPendientes = 1;
             const ths = document.querySelectorAll('#headPendientes th');
@@ -496,11 +501,9 @@
             document.getElementById('modalPendientes').style.display = 'none';
         };
 
-        // Función que dibuja el contenido del modal de pendientes (necesaria para ordenar en vivo)
         window.renderListaPendientes = () => {
             let lista = [...listaPendientesGlobal];
 
-            // Aplicar el ordenamiento si hay una columna seleccionada
             if (sortColumnaPendientes) {
                 lista.sort((a, b) => {
                     let valA, valB;
@@ -664,7 +667,6 @@
             <div style="margin-bottom: 20px;">
                 <h3 style="margin-bottom: 10px;">Nombre Operadores</h3>
                 <div id="listaUsuariosRegistrados" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                    <!-- Los usuarios se insertan aquí -->
                 </div>
             </div>
             <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 20px;">
@@ -704,11 +706,16 @@
     </div>
 </div>
 
-<!-- MODAL PARA VER LOS PENDIENTES CON ORDENAMIENTO -->
 <div id="modalPendientes" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
     <div style="background:white; padding:25px; border-radius:15px; width:600px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-            <h2 style="margin:0; color: var(--warning);">⏳ Códigos Pendientes</h2>
+            <div style="display:flex; align-items:center; gap: 15px;">
+                <h2 style="margin:0; color: var(--warning);">⏳ Códigos Pendientes</h2>
+                <label style="display:flex; align-items:center; cursor:pointer; font-size:0.85rem; font-weight:bold; color:#555; background: #f4f7fe; padding: 5px 10px; border-radius: 8px; border: 1px solid #ddd; gap: 5px;" title="Activar para enviar los pendientes no contados al operario">
+                    <input type="checkbox" id="togglePendientes" onchange="toggleEnviarPendientes(this.checked)" style="width:16px; height:16px; margin:0; cursor:pointer;">
+                    Enviar a Reconteo
+                </label>
+            </div>
             <button onclick="cerrarModalPendientes()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
         </div>
         
@@ -718,7 +725,6 @@
                     <tr>
                         <th data-col="codigo" onclick="ordenarTablaPendientes('codigo')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Código">Código</th>
                         <th data-col="producto" onclick="ordenarTablaPendientes('producto')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Producto">Producto</th>
-                        <!-- Se añadió white-space: nowrap y un min-width a Ubicación para evitar que los textos se salten de línea -->
                         <th data-col="ubicacion" onclick="ordenarTablaPendientes('ubicacion')" style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; cursor:pointer; user-select:none; white-space:nowrap; min-width: 100px;" title="Ordenar por Ubicación">Ubicación</th>
                     </tr>
                 </thead>
