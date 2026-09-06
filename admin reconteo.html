@@ -576,7 +576,7 @@
             <h2 id="totalDescuadre" style="color:var(--danger)">0</h2>
         </div>
         <div class="stat-card" style="border-color: var(--success);">
-            <span style="color:#666; font-weight:bold; font-size:0.8rem">CÓDIGOS YA RECONTADOS</span>
+            <span style="color:#666; font-weight:bold; font-size:0.8rem">CÓDIGOS RECONTADOS</span>
             <h2 id="totalRecontado" style="color:var(--success)">0</h2>
         </div>
         <div class="stat-card" style="border-color: var(--warning); cursor: pointer;" onclick="abrirModalPendientes()" title="Ver lista de códigos pendientes">
@@ -601,7 +601,7 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 25px;">
             <!-- Admin -->
             <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-                <h4 style="margin: 0 0 12px 0; color: #475569; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">1er Conteo</h4>
+                <h4 style="margin: 0 0 12px 0; color: #475569; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">1er Conteo (SKU)</h4>
                 <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
                     <span style="color: var(--success); font-weight: bold;">✅ Cuadrados:</span>
                     <span id="st-ad-cuad" style="font-weight: bold; color: #555;">0 (0%)</span>
@@ -618,7 +618,7 @@
             
             <!-- Reconteo -->
             <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-                <h4 style="margin: 0 0 12px 0; color: #475569; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Reconteo</h4>
+                <h4 style="margin: 0 0 12px 0; color: #475569; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Reconteo (SKU)</h4>
                 <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
                     <span style="color: var(--success); font-weight: bold;">✅ Cuadrados:</span>
                     <span id="st-re-cuad" style="font-weight: bold; color: #555;">0 (0%)</span>
@@ -635,7 +635,7 @@
             
             <!-- Total General -->
             <div style="background: #f0f9ff; padding: 15px; border-radius: 10px; border: 1px solid #bae6fd; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-                <h4 style="margin: 0 0 12px 0; color: var(--primary); text-align: center; border-bottom: 2px solid #bae6fd; padding-bottom: 8px;">Total General Inventario</h4>
+                <h4 style="margin: 0 0 12px 0; color: var(--primary); text-align: center; border-bottom: 2px solid #bae6fd; padding-bottom: 8px;">Total General Inventario (SKU)</h4>
                 <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px;">
                     <span style="color: var(--success); font-weight: bold;">✅ Cuadrados:</span>
                     <span id="st-gen-cuad" style="font-weight: bold; color: #333;">0 (0%)</span>
@@ -737,7 +737,7 @@
                 <thead>
                     <tr>
                         <th style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">Operador</th>
-                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">Procesados</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">Procesados (SKU)</th>
                         <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">✅ Cuad.</th>
                         <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">⬇️ Falt.</th>
                         <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; position: sticky; top: 0; background: white; z-index: 1;">⬆️ Sobr.</th>
