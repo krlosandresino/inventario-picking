@@ -175,6 +175,20 @@
             }
         };
 
+        // --- INICIO NUEVO: FUNCIÓN CERRAR SESIÓN ---
+        window.cerrarSesionOp = () => {
+            if(confirm("¿Deseas cerrar sesión para abrir otra?")) {
+                usuarioActual = "";
+                document.getElementById('displayUsuario').innerText = "👤 Op: -";
+                document.getElementById('userOp').value = "";
+                document.getElementById('cuerpoRegistros').innerHTML = "";
+                document.getElementById('cuerpoIncidencias').innerHTML = "";
+                document.getElementById('loginOverlayOp').style.display = 'flex';
+                document.getElementById('userOp').focus();
+            }
+        };
+        // --- FIN NUEVO: FUNCIÓN CERRAR SESIÓN ---
+
         function actualizarDashboard(registros) {
             if (!inventarioMaestro.length) return;
             const codigosContados = new Set(Object.values(registros || {}).map(r => r.cod));
@@ -381,7 +395,12 @@
     </div>
     
     <button class="btn-inc" onclick="abrirModal()">⚠️ Reportar Fuera de Stock</button>
-    <center><button class="btn-clear-view" onclick="limpiarVistaVisual()">🧹 LIMPIAR VISTA</button></center>
+    
+    <!-- CONTENEDOR MODIFICADO PARA ALINEAR AMBOS BOTONES -->
+    <div style="display: flex; justify-content: center; gap: 15px;">
+        <button class="btn-clear-view" onclick="limpiarVistaVisual()">🧹 LIMPIAR VISTA</button>
+        <button class="btn-clear-view" onclick="cerrarSesionOp()">🚪 CERRAR SESIÓN</button>
+    </div>
 </div>
 
 <div class="container">
