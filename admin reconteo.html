@@ -126,16 +126,14 @@
                 let difFinal = fueContado2 ? (fisico2 - teorico) : "-";
                 let userReconteo = reconteoObj ? Array.from(reconteoObj.usuarios).join(', ') : "Pendiente";
                 
-                // Cálculos de Admin (1er Conteo)
-                if (fueContado1) {
-                    adminStats.total++;
-                    let dif1 = fisico1 - teorico;
-                    if (dif1 === 0) adminStats.cuad++;
-                    else if (dif1 < 0) adminStats.falt++;
-                    else adminStats.sobr++;
-                }
+                // Cálculos de Admin (1er Conteo) - AHORA EVALÚA TODOS LOS 873 SKU
+                adminStats.total++;
+                let dif1 = fisico1 - teorico;
+                if (dif1 === 0) adminStats.cuad++;
+                else if (dif1 < 0) adminStats.falt++;
+                else adminStats.sobr++;
 
-                // Cálculos de Reconteo (2do Conteo)
+                // Cálculos de Reconteo (2do Conteo) - SE MANTIENE SOLO PARA LOS RECONTADOS
                 if (fueContado2) {
                     reconteoStats.total++;
                     if (difFinal === 0) reconteoStats.cuad++;
@@ -143,14 +141,12 @@
                     else reconteoStats.sobr++;
                 }
 
-                // Cálculos Generales (Total Final unificado)
-                if (fueContado1 || fueContado2) {
-                    generalStats.total++;
-                    let difGen = fueContado2 ? difFinal : (fisico1 - teorico);
-                    if (difGen === 0) generalStats.cuad++;
-                    else if (difGen < 0) generalStats.falt++;
-                    else generalStats.sobr++;
-                }
+                // Cálculos Generales (Total Final unificado) - AHORA EVALÚA TODOS LOS 873 SKU
+                generalStats.total++;
+                let difGen = fueContado2 ? difFinal : (fisico1 - teorico);
+                if (difGen === 0) generalStats.cuad++;
+                else if (difGen < 0) generalStats.falt++;
+                else generalStats.sobr++;
 
                 if(reconteoObj) {
                     reconteosCompletados++;
