@@ -277,6 +277,7 @@
             document.getElementById('st-gen-cuad').innerText = `${generalStats.cuad} (${calcPct(generalStats.cuad, generalStats.total)}%)`;
             document.getElementById('st-gen-falt').innerText = `${generalStats.falt} (${calcPct(generalStats.falt, generalStats.total)}%)`;
             document.getElementById('st-gen-sobr').innerText = `${generalStats.sobr} (${calcPct(generalStats.sobr, generalStats.total)}%)`;
+            document.getElementById('st-gen-total').innerText = `${generalStats.total} (100%)`; // NUEVA LÍNEA PARA EL TOTAL
 
             // Calcular y mostrar ERI% Final
             const eriValue = calcPct(generalStats.cuad, generalStats.total);
@@ -643,6 +644,11 @@
                 <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
                     <span style="color: var(--warning); font-weight: bold;">⬆️ Sobrantes:</span>
                     <span id="st-gen-sobr" style="font-weight: bold; color: #333;">0 (0%)</span>
+                </div>
+                <!-- SECCIÓN NUEVA AGREGADA: TOTAL SKUS -->
+                <div style="display: flex; justify-content: space-between; font-size: 0.95rem; margin-top: 10px; padding-top: 10px; border-top: 2px solid #bae6fd;">
+                    <span style="color: var(--primary); font-weight: bold;">∑ Total SKUs:</span>
+                    <span id="st-gen-total" style="font-weight: bold; color: #333;">0 (100%)</span>
                 </div>
             </div>
         </div>
