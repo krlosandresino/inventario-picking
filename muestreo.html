@@ -169,20 +169,17 @@
             }
         };
 
-        // --- INICIO NUEVA FUNCIÓN: MOSTRAR TOAST ---
         window.mostrarToast = (mensaje) => {
             const toast = document.getElementById('toastNotification');
             toast.innerText = mensaje;
             toast.classList.add('show');
             
-            // Si el usuario guarda muy rápido, reiniciamos el temporizador
             if (window.toastTimeout) clearTimeout(window.toastTimeout);
             
             window.toastTimeout = setTimeout(() => {
                 toast.classList.remove('show');
             }, 2000);
         };
-        // --- FIN NUEVA FUNCIÓN ---
 
         function actualizarDashboard(registros) {
             if (!inventarioMaestro.length) return;
@@ -212,7 +209,39 @@
             }
         });
 
-        onValue(dbRefRegistros, (snap) => actualizarDashboard(snap.val()));
+        // --- LÓGICA ACTUALIZADA: REACCIONAR A ELIMINACIONES DEL ADMIN ---
+        onValue(dbRefRegistros, (snap) => {
+            const registros = snap.val() || {};
+            actualizarDashboard(registros);
+            
+            const codigosContados = new Set(Object.values(registros).map(r => String(r.cod)));
+            const filtro = document.getElementById('buscadorCodigo').value;
+            const tarjetas = document.querySelectorAll('.rc-wrapper');
+            
+            tarjetas.forEach(tarjeta => {
+                const cod = tarjeta.querySelector('.rc-cod').innerText;
+                
+                // Si el código ya NO está en Firebase (fue eliminado por el admin)
+                if (!codigosContados.has(cod)) {
+                    const btnRegistrar = tarjeta.querySelector('.rc-btn:not(.btn-enviar)');
+                    const btnEnviar = tarjeta.querySelector('.btn-enviar');
+                    
+                    // Restauramos la tarjeta a su estado original
+                    tarjeta.style.opacity = '1';
+                    tarjeta.style.transform = 'scale(1)';
+                    if (btnRegistrar) btnRegistrar.innerText = 'Registrar';
+                    if (btnEnviar) btnEnviar.style.display = 'none';
+                    
+                    // Asegurarnos de que respeta la búsqueda actual del usuario
+                    if (cod.includes(filtro)) {
+                        tarjeta.style.display = 'flex';
+                    } else {
+                        tarjeta.style.display = 'none';
+                    }
+                }
+            });
+        });
+        // -----------------------------------------------------------------
 
         window.renderizarListaMaestro = () => {
             const contenedor = document.getElementById('listaMaestro');
@@ -237,6 +266,8 @@
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                             onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this.nextElementSibling)">
                         <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this)" class="btn-main rc-btn">Registrar</button>
+                        
+                        <button onclick="cerrarCodigo(this)" class="btn-main rc-btn btn-enviar" style="display:none; background: var(--success);">Enviar</button>
                     </div>
                 </div>`;
             });
@@ -269,9 +300,7 @@
             emitirSonido('ok'); 
             inputEl.value = ""; 
 
-            // --- LLAMADA AL TOAST (NOTIFICACIÓN VISUAL) ---
             mostrarToast(`✅ Guardado: ${cod}`);
-            // ----------------------------------------------
 
             setTimeout(() => {
                 inputEl.disabled = false;
@@ -279,8 +308,32 @@
                 if (btnEl) {
                     btnEl.disabled = false;
                     btnEl.style.opacity = '1';
+                    
+                    btnEl.innerText = 'Ingresar más';
+                    const tarjeta = btnEl.closest('.rc-wrapper');
+                    if (tarjeta) {
+                        tarjeta.style.opacity = '0.6';
+                        tarjeta.style.transition = 'opacity 0.3s ease';
+                    }
+                    
+                    const btnEnviar = btnEl.nextElementSibling;
+                    if (btnEnviar && btnEnviar.classList.contains('btn-enviar')) {
+                        btnEnviar.style.display = 'inline-block';
+                    }
                 }
             }, 1500);
+        };
+
+        window.cerrarCodigo = (btnEl) => {
+            const tarjeta = btnEl.closest('.rc-wrapper');
+            if (tarjeta) {
+                tarjeta.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                tarjeta.style.opacity = '0';
+                tarjeta.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    tarjeta.style.display = 'none';
+                }, 300);
+            }
         };
 
         window.filtrarCodigos = () => {
@@ -368,10 +421,9 @@
         #listaMaestro::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
         body.dark-mode #listaMaestro::-webkit-scrollbar-thumb { background: #555; }
 
-        /* --- ESTILOS AÑADIDOS PARA EL TOAST --- */
         #toastNotification {
             position: fixed;
-            bottom: -50px; /* Oculto inicialmente por debajo de la pantalla */
+            bottom: -50px; 
             left: 50%;
             transform: translateX(-50%);
             background: var(--success);
@@ -387,10 +439,9 @@
             opacity: 0;
         }
         #toastNotification.show {
-            bottom: 30px; /* Sube a la pantalla */
+            bottom: 30px; 
             opacity: 1;
         }
-        /* -------------------------------------- */
     </style>
 </head>
 <body>
@@ -429,9 +480,7 @@
     </div>
 </div>
 
-<!-- INICIO CONTENEDOR TOAST AÑADIDO -->
 <div id="toastNotification"></div>
-<!-- FIN CONTENEDOR TOAST -->
 
 <script>
     document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('pinOp').focus(); });
