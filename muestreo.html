@@ -38,6 +38,7 @@
 
         let inventarioMaestro = [];
         let usuarioActual = "";
+        let codigosContadosGlobal = new Set();
 
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
@@ -209,28 +210,37 @@
             }
         });
 
-        // --- LÓGICA ACTUALIZADA: REACCIONAR A ELIMINACIONES DEL ADMIN ---
+        // --- LÓGICA ACTUALIZADA: OCULTAR REGISTROS YA CONTADOS ---
         onValue(dbRefRegistros, (snap) => {
             const registros = snap.val() || {};
             actualizarDashboard(registros);
             
-            const codigosContados = new Set(Object.values(registros).map(r => String(r.cod)));
+            codigosContadosGlobal = new Set(Object.values(registros).map(r => String(r.cod)));
             const filtro = document.getElementById('buscadorCodigo').value;
             const tarjetas = document.querySelectorAll('.rc-wrapper');
             
             tarjetas.forEach(tarjeta => {
                 const cod = tarjeta.querySelector('.rc-cod').innerText;
                 
-                // Si el código ya NO está en Firebase (fue eliminado por el admin)
-                if (!codigosContados.has(cod)) {
-                    const btnRegistrar = tarjeta.querySelector('.rc-btn:not(.btn-enviar)');
-                    const btnEnviar = tarjeta.querySelector('.btn-enviar');
+                // Si el código ya está en Firebase, se oculta
+                if (codigosContadosGlobal.has(cod)) {
+                    tarjeta.style.display = 'none';
+                } else {
+                    // Si el código NO está en Firebase (o fue eliminado por el admin)
+                    // Restauramos la tarjeta a su estado original para que se pueda volver a ingresar
+                    const inputEl = tarjeta.querySelector('.rc-input');
+                    const btnRegistrar = tarjeta.querySelector('.rc-btn');
                     
-                    // Restauramos la tarjeta a su estado original
                     tarjeta.style.opacity = '1';
                     tarjeta.style.transform = 'scale(1)';
-                    if (btnRegistrar) btnRegistrar.innerText = 'Registrar';
-                    if (btnEnviar) btnEnviar.style.display = 'none';
+                    if (inputEl) {
+                        inputEl.disabled = false;
+                        inputEl.style.opacity = '1';
+                    }
+                    if (btnRegistrar) {
+                        btnRegistrar.disabled = false;
+                        btnRegistrar.style.opacity = '1';
+                    }
                     
                     // Asegurarnos de que respeta la búsqueda actual del usuario
                     if (cod.includes(filtro)) {
@@ -246,13 +256,19 @@
         window.renderizarListaMaestro = () => {
             const contenedor = document.getElementById('listaMaestro');
             let html = "";
+            const filtro = document.getElementById('buscadorCodigo').value;
+
             inventarioMaestro.forEach((item, index) => {
                 const nombreOriginal = item.nom || '';
                 const nombreCorto = nombreOriginal.length > 25 ? nombreOriginal.substring(0, 25) + '...' : nombreOriginal;
                 const nomLimpio = nombreOriginal.replace(/['"]/g, ''); 
                 
+                // Determinamos el display inicial: oculto si ya está contado, o si no coincide con el filtro
+                const displayStyle = (codigosContadosGlobal.has(String(item.cod))) ? 'none' : 
+                                     (String(item.cod).includes(filtro) ? 'flex' : 'none');
+                
                 html += `
-                <div class="result-card rc-wrapper">
+                <div class="result-card rc-wrapper" style="display: ${displayStyle};">
                     <div class="rc-info-col">
                         <div class="rc-cod-row">
                             <span class="rc-cod">${item.cod}</span>
@@ -266,8 +282,6 @@
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                             onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this.nextElementSibling)">
                         <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this)" class="btn-main rc-btn">Registrar</button>
-                        
-                        <button onclick="cerrarCodigo(this)" class="btn-main rc-btn btn-enviar" style="display:none; background: var(--success);">Enviar</button>
                     </div>
                 </div>`;
             });
@@ -302,51 +316,31 @@
 
             mostrarToast(`✅ Guardado: ${cod}`);
 
-            setTimeout(() => {
-                inputEl.disabled = false;
-                inputEl.style.opacity = '1';
-                if (btnEl) {
-                    btnEl.disabled = false;
-                    btnEl.style.opacity = '1';
-                    
-                    btnEl.innerText = 'Ingresar más';
-                    const tarjeta = btnEl.closest('.rc-wrapper');
-                    if (tarjeta) {
-                        tarjeta.style.opacity = '0.6';
-                        tarjeta.style.transition = 'opacity 0.3s ease';
-                    }
-                    
-                    const btnEnviar = btnEl.nextElementSibling;
-                    if (btnEnviar && btnEnviar.classList.contains('btn-enviar')) {
-                        btnEnviar.style.display = 'inline-block';
-                    }
-                }
-            }, 1500);
-        };
-
-        window.cerrarCodigo = (btnEl) => {
+            // Transición visual rápida, el ocultamiento real (display:none) lo gestiona el onValue de Firebase
             const tarjeta = btnEl.closest('.rc-wrapper');
             if (tarjeta) {
-                tarjeta.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                tarjeta.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
                 tarjeta.style.opacity = '0';
                 tarjeta.style.transform = 'scale(0.95)';
-                setTimeout(() => {
-                    tarjeta.style.display = 'none';
-                }, 300);
             }
         };
 
+        let debounceTimerBusqueda;
         window.filtrarCodigos = () => {
-            const filtro = document.getElementById('buscadorCodigo').value;
-            const tarjetas = document.querySelectorAll('.rc-wrapper');
-            tarjetas.forEach(tarjeta => {
-                const cod = tarjeta.querySelector('.rc-cod').innerText;
-                if (cod.includes(filtro)) {
-                    tarjeta.style.display = 'flex';
-                } else {
-                    tarjeta.style.display = 'none';
-                }
-            });
+            clearTimeout(debounceTimerBusqueda);
+            debounceTimerBusqueda = setTimeout(() => {
+                const filtro = document.getElementById('buscadorCodigo').value;
+                const tarjetas = document.querySelectorAll('.rc-wrapper');
+                tarjetas.forEach(tarjeta => {
+                    const cod = tarjeta.querySelector('.rc-cod').innerText;
+                    // Muestra la tarjeta si coincide con la búsqueda y NO está registrada aún
+                    if (cod.includes(filtro) && !codigosContadosGlobal.has(cod)) {
+                        tarjeta.style.display = 'flex';
+                    } else {
+                        tarjeta.style.display = 'none';
+                    }
+                });
+            }, 300); // 300ms de espera antes de ejecutar la búsqueda visual
         };
     </script>
     <style>
