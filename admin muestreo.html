@@ -150,6 +150,23 @@
             ejecutarFiltro(); 
         }
 
+        // --- NUEVA LÓGICA: SOLICITAR RECONTEO (AUDITORÍA) ---
+        window.solicitarReconteo = async (codigo) => {
+            if(confirm(`¿Deseas enviar a RECONTAR el código ${codigo}?`)) {
+                await set(ref(db, `auditoria/${codigo}`), true);
+                
+                const snap = await get(dbRefRegistros);
+                const registros = snap.val() || {};
+                
+                for (const key in registros) {
+                    if (String(registros[key].cod) === String(codigo)) {
+                        await remove(ref(db, `registros/${key}`));
+                    }
+                }
+                alert(`Código ${codigo} enviado a Reconteo a los operarios.`);
+            }
+        };
+
         window.eliminarRegistroIndividual = async (codigo) => {
             if(confirm(`¿Deseas eliminar los registros del código ${codigo} para que lo vuelvan a ingresar?`)) {
                 const snap = await get(dbRefRegistros);
@@ -234,6 +251,7 @@
         window.borrarHistorial = async () => {
             if(confirm("¿DESEAS BORRAR TODA LA INFORMACION?")) {
                 await remove(dbRefRegistros);
+                await remove(ref(db, 'auditoria')); // Limpiamos la bandera de auditoría
                 alert("Datos limpiados correctamente.");
             }
         };
@@ -371,7 +389,10 @@
                         <td align="center">${teo}</td>
                         <td align="center"><b>${fis}</b></td>
                         <td align="center" style="color:${colorDif}; font-weight:bold;">${dif > 0 ? '+'+dif : dif}</td>
-                        <td align="center">
+                        <td align="center" style="white-space: nowrap;">
+                            <button class="btn-action-delete" onclick="solicitarReconteo('${reg.cod}')" title="Solicitar Reconteo (Auditoría)" style="margin-right: 8px; color: var(--warning);">
+                                <i class="fa-solid fa-rotate-right"></i>
+                            </button>
                             <button class="btn-action-delete" onclick="eliminarRegistroIndividual('${reg.cod}')" title="Eliminar registro">
                                 <i class="fa-solid fa-trash-can"></i>
                             </button>
@@ -445,14 +466,12 @@
             document.getElementById('modalEstadisticas').style.display = 'none';
         };
 
-        // --- FUNCIONES PARA EL MODAL DE PENDIENTES ---
         window.abrirModalPendientes = () => {
             const registros = Object.values(registrosGlobales);
             const codigosRegistrados = new Set(registros.map(reg => String(reg.cod)));
             
             listaPendientesGlobal = dataMaestro.filter(m => !codigosRegistrados.has(String(m.cod)));
             
-            // Reiniciar estado de las flechas de ordenamiento al abrir el modal
             sortColumnaPendientes = null;
             sortDireccionPendientes = 1;
             const ths = document.querySelectorAll('#headPendientes th');
@@ -466,11 +485,9 @@
             document.getElementById('modalPendientes').style.display = 'none';
         };
 
-        // Función que dibuja el contenido del modal de pendientes (necesaria para ordenar en vivo)
         window.renderListaPendientes = () => {
             let lista = [...listaPendientesGlobal];
 
-            // Aplicar el ordenamiento si hay una columna seleccionada
             if (sortColumnaPendientes) {
                 lista.sort((a, b) => {
                     let valA, valB;
@@ -588,7 +605,6 @@
     <div class="stats-grid">
         <div class="stat-card"><span>SKU</span><h2 id="totalMaestro">0</h2></div>
         
-        <!-- SE AGREGÓ EL EVENTO ONCLICK Y EL CURSOR A LA TARJETA DE PENDIENTES -->
         <div class="stat-card" style="border-color: var(--warning); cursor: pointer;" onclick="abrirModalPendientes()" title="Ver lista de códigos pendientes">
             <span>PENDIENTES</span><h2 id="pendientes">0</h2>
         </div>
@@ -665,7 +681,6 @@
     </div>
 </div>
 
-<!-- MODAL PARA VER LOS PENDIENTES CON ORDENAMIENTO -->
 <div id="modalPendientes" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
     <div style="background:white; padding:25px; border-radius:15px; width:600px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -679,7 +694,6 @@
                     <tr>
                         <th data-col="codigo" onclick="ordenarTablaPendientes('codigo')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Código">Código</th>
                         <th data-col="producto" onclick="ordenarTablaPendientes('producto')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Producto">Producto</th>
-                        <!-- Se añadió white-space: nowrap y un min-width a Ubicación para evitar que los textos se salten de línea -->
                         <th data-col="ubicacion" onclick="ordenarTablaPendientes('ubicacion')" style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; cursor:pointer; user-select:none; white-space:nowrap; min-width: 100px;" title="Ordenar por Ubicación">Ubicación</th>
                     </tr>
                 </thead>

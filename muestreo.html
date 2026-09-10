@@ -6,7 +6,7 @@
     <title>👤 Operarios - Muestreo</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, onValue, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        import { getDatabase, ref, push, onValue, get, set, remove } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         // --- CONEXIÓN ORIGINAL PARA DATOS DE MUESTREO ---
         const firebaseConfig = {
@@ -39,6 +39,9 @@
         let inventarioMaestro = [];
         let usuarioActual = "";
         let codigosContadosGlobal = new Set();
+        
+        // --- NUEVA VARIABLE: AUDITORÍA EN CALIENTE ---
+        let auditoriaGlobal = {};
 
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
@@ -110,6 +113,29 @@
             if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
         });
 
+        async function iniciarMonitoreoBateria(usuario) {
+            if ('getBattery' in navigator) {
+                try {
+                    const battery = await navigator.getBattery();
+                    const dbRefBateria = ref(db, 'baterias_operarios/' + usuario);
+
+                    const actualizarBateriaEnFirebase = () => {
+                        set(dbRefBateria, {
+                            nivel: battery.level,
+                            cargando: battery.charging
+                        });
+                    };
+
+                    actualizarBateriaEnFirebase(); 
+
+                    battery.addEventListener('levelchange', actualizarBateriaEnFirebase);
+                    battery.addEventListener('chargingchange', actualizarBateriaEnFirebase);
+                } catch (e) {
+                    console.log("No se pudo acceder a la API de Batería:", e);
+                }
+            }
+        }
+
         window.onload = () => { document.getElementById('userOp').focus(); };
 
         window.iniciarSesionOp = () => {
@@ -140,6 +166,8 @@
                         document.getElementById('displayUsuario').innerText = "👤 Op: " + usuarioActual;
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
+                        
+                        iniciarMonitoreoBateria(usuarioActual);
                         
                         get(dbRefRegistros).then((snapshot) => actualizarDashboard(snapshot.val()));
                     } else {
@@ -192,6 +220,25 @@
             document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
         }
 
+        // --- LÓGICA DE ESCUCHA DE AUDITORÍA (SIN PERDER EL FOCO) ---
+        onValue(ref(db, 'auditoria'), (snap) => {
+            auditoriaGlobal = snap.val() || {};
+            const tarjetas = document.querySelectorAll('.rc-wrapper');
+            
+            tarjetas.forEach(tarjeta => {
+                const cod = tarjeta.querySelector('.rc-cod').innerText;
+                const badgeEl = tarjeta.querySelector('.badge-auditoria');
+                
+                if (auditoriaGlobal[cod]) {
+                    tarjeta.classList.add('rc-auditoria');
+                    if(badgeEl) badgeEl.style.display = 'inline-block';
+                } else {
+                    tarjeta.classList.remove('rc-auditoria');
+                    if(badgeEl) badgeEl.style.display = 'none';
+                }
+            });
+        });
+
         onValue(dbRefMaestro, (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -210,7 +257,6 @@
             }
         });
 
-        // --- LÓGICA ACTUALIZADA: OCULTAR REGISTROS YA CONTADOS ---
         onValue(dbRefRegistros, (snap) => {
             const registros = snap.val() || {};
             actualizarDashboard(registros);
@@ -222,12 +268,9 @@
             tarjetas.forEach(tarjeta => {
                 const cod = tarjeta.querySelector('.rc-cod').innerText;
                 
-                // Si el código ya está en Firebase, se oculta
                 if (codigosContadosGlobal.has(cod)) {
                     tarjeta.style.display = 'none';
                 } else {
-                    // Si el código NO está en Firebase (o fue eliminado por el admin)
-                    // Restauramos la tarjeta a su estado original para que se pueda volver a ingresar
                     const inputEl = tarjeta.querySelector('.rc-input');
                     const btnRegistrar = tarjeta.querySelector('.rc-btn');
                     
@@ -242,7 +285,6 @@
                         btnRegistrar.style.opacity = '1';
                     }
                     
-                    // Asegurarnos de que respeta la búsqueda actual del usuario
                     if (cod.includes(filtro)) {
                         tarjeta.style.display = 'flex';
                     } else {
@@ -251,7 +293,6 @@
                 }
             });
         });
-        // -----------------------------------------------------------------
 
         window.renderizarListaMaestro = () => {
             const contenedor = document.getElementById('listaMaestro');
@@ -263,16 +304,17 @@
                 const nombreCorto = nombreOriginal.length > 25 ? nombreOriginal.substring(0, 25) + '...' : nombreOriginal;
                 const nomLimpio = nombreOriginal.replace(/['"]/g, ''); 
                 
-                // Determinamos el display inicial: oculto si ya está contado, o si no coincide con el filtro
                 const displayStyle = (codigosContadosGlobal.has(String(item.cod))) ? 'none' : 
                                      (String(item.cod).includes(filtro) ? 'flex' : 'none');
                 
+                // Se agregó la clase rc-auditoria y el badge condicional
                 html += `
-                <div class="result-card rc-wrapper" style="display: ${displayStyle};">
+                <div class="result-card rc-wrapper ${auditoriaGlobal[item.cod] ? 'rc-auditoria' : ''}" style="display: ${displayStyle};">
                     <div class="rc-info-col">
                         <div class="rc-cod-row">
                             <span class="rc-cod">${item.cod}</span>
                             <span class="rc-pos">${item.pos}</span>
+                            <span class="badge-auditoria" style="display: ${auditoriaGlobal[item.cod] ? 'inline-block' : 'none'}; background:var(--warning); color:#fff; padding:2px 5px; border-radius:4px; font-size:0.65rem; font-weight:bold; margin-left:4px;">⚠️ RECONTEO</span>
                         </div>
                         <span class="nombre-movil" style="font-size:0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${nombreCorto}</span>
                     </div>
@@ -311,12 +353,16 @@
                 usuario: usuarioActual 
             });
             
+            // Limpiamos la alerta de auditoría si el código la tenía
+            if (auditoriaGlobal[cod]) {
+                remove(ref(db, `auditoria/${cod}`));
+            }
+            
             emitirSonido('ok'); 
             inputEl.value = ""; 
 
             mostrarToast(`✅ Guardado: ${cod}`);
 
-            // Transición visual rápida, el ocultamiento real (display:none) lo gestiona el onValue de Firebase
             const tarjeta = btnEl.closest('.rc-wrapper');
             if (tarjeta) {
                 tarjeta.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
@@ -333,18 +379,17 @@
                 const tarjetas = document.querySelectorAll('.rc-wrapper');
                 tarjetas.forEach(tarjeta => {
                     const cod = tarjeta.querySelector('.rc-cod').innerText;
-                    // Muestra la tarjeta si coincide con la búsqueda y NO está registrada aún
                     if (cod.includes(filtro) && !codigosContadosGlobal.has(cod)) {
                         tarjeta.style.display = 'flex';
                     } else {
                         tarjeta.style.display = 'none';
                     }
                 });
-            }, 300); // 300ms de espera antes de ejecutar la búsqueda visual
+            }, 300); 
         };
     </script>
     <style>
-        :root { --primary: #1a73e8; --danger: #d93025; --success: #34a853; --bg: #f8f9fa; }
+        :root { --primary: #1a73e8; --danger: #d93025; --success: #34a853; --warning: #f9ab00; --bg: #f8f9fa; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; user-select: none; transition: background 0.3s, color 0.3s; }
         .container { width: 100%; max-width: 450px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 12px; transition: background 0.3s; }
         input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
@@ -376,7 +421,7 @@
         body.dark-mode .btn-dark-mode { background: #333; color: #ccc; border: 1px solid #555; }
         body.dark-mode .progress-container { background: #333; }
 
-        .rc-wrapper { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; margin-bottom: 6px; }
+        .rc-wrapper { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; margin-bottom: 6px; transition: background-color 0.3s, border 0.3s; }
         .rc-info-col { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow: hidden; }
         .rc-cod-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
         .rc-cod { font-size:1rem; font-weight:bold; }
@@ -384,6 +429,10 @@
         .rc-actions { display: flex; align-items: center; gap: 6px; }
         .rc-input { margin:0; padding: 10px 5px; width: 65px; font-size: 1rem; text-align: center; font-weight:bold; transition: opacity 0.3s; }
         .rc-btn { padding: 10px 15px; width: auto; font-size: 0.9rem; border-radius: 6px; transition: opacity 0.3s; }
+
+        /* --- CLASE DE AUDITORÍA --- */
+        .rc-auditoria { border: 2px solid var(--warning) !important; background-color: #fffdf5 !important; }
+        body.dark-mode .rc-auditoria { background-color: #3a3211 !important; border-color: var(--warning) !important; }
 
         body {
             height: 100dvh; 
