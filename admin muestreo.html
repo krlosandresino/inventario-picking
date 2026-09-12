@@ -241,8 +241,16 @@
             reader.onload = async (event) => {
                 const data = new Uint8Array(event.target.result);
                 const wb = XLSX.read(data, { type: 'array' });
-                const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-                const nuevoMaestro = rawRows.slice(1).map(f => ({ cod: String(f[0]||''), nom: String(f[1]||''), pos: String(f[2]||''), stock: parseFloat(f[3])||0 })).filter(i => i.cod !== "");
+                // Usamos sheet_to_json sin 'header: 1' para obtener los objetos con encabezados reales
+                const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                
+                const nuevoMaestro = rawRows.map(f => ({ 
+                    cod: f["Variante"] !== undefined ? String(f["Variante"]) : '', 
+                    nom: f["nombre"] !== undefined ? String(f["nombre"]) : '', 
+                    pos: f["Caja"] !== undefined ? String(f["Caja"]) : '', 
+                    stock: parseFloat(f["Physical Quantity"]) || 0 
+                })).filter(i => i.cod !== "");
+
                 await set(dbRefMaestro, nuevoMaestro);
                 alert("Inventario cargado y actualizado");
             };
