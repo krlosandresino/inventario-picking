@@ -314,7 +314,7 @@
                         <div class="rc-cod-row">
                             <span class="rc-cod">${item.cod}</span>
                             <span class="rc-pos">${item.pos}</span>
-                            <span class="badge-auditoria" style="display: ${auditoriaGlobal[item.cod] ? 'inline-block' : 'none'}; background:var(--warning); color:#fff; padding:2px 5px; border-radius:4px; font-size:0.65rem; font-weight:bold; margin-left:4px;">⚠️ RECONTEO</span>
+                            <span class="badge-auditoria" style="display: ${auditoriaGlobal[item.cod] ? 'inline-block' : 'none'}; background:var(--warning); color:#fff; padding:2px 5px; border-radius:4px; font-size:0.65rem; font-weight:bold; margin-left:4px; white-space: nowrap; flex-shrink: 0;">⚠️ RECONTEO</span>
                         </div>
                         <span class="nombre-movil" style="font-size:0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${nombreCorto}</span>
                     </div>
@@ -423,7 +423,7 @@
 
         .rc-wrapper { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; margin-bottom: 6px; transition: background-color 0.3s, border 0.3s; }
         .rc-info-col { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow: hidden; }
-        .rc-cod-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+        .rc-cod-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; flex-wrap: wrap; }
         .rc-cod { font-size:1rem; font-weight:bold; }
         .rc-pos { font-size:1.1rem; font-weight:900; color: var(--danger); }
         .rc-actions { display: flex; align-items: center; gap: 6px; }
