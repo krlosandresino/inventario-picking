@@ -9,7 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        // Añadido "update" para permitir la inserción en lote
+        import { getDatabase, ref, push, get, update } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         // --- CONEXIÓN A LA BASE DE DATOS PRINCIPAL ---
         const firebaseConfig = {
@@ -48,59 +49,88 @@
             reader.readAsArrayBuffer(file);
             reader.onload = async (e) => {
                 try {
-                    const data = new Uint8Array(e.target.result);
-                    const wb = XLSX.read(data, { type: 'array' });
-                    const sheet = wb.Sheets[wb.SheetNames[0]];
-                    // Leer el excel
-                    const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+                    // Usamos let en lugar de const para poder destruirlas de la RAM luego
+                    let data = new Uint8Array(e.target.result);
+                    let wb = XLSX.read(data, { type: 'array' });
+                    let sheet = wb.Sheets[wb.SheetNames[0]];
+                    let json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-                    // Descargar maestro para cruzar datos (nom, pos, teorico)
+                    // Descargar maestro para cruzar datos
                     const snapMaestro = await get(dbRefMaestro);
                     const maestroData = snapMaestro.val() || [];
-                    
-                    // Crear un diccionario rápido del maestro para buscar por código
                     const maestroMap = {};
                     Object.values(maestroData).forEach(item => {
                         maestroMap[String(item.cod).trim()] = item;
                     });
 
-                    statusBox.innerHTML = '<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Subiendo registros al servidor...';
-
-                    let conteoExito = 0;
+                    // 1. Filtrar la información primero
+                    const registrosValidos = [];
                     let conteoFallo = 0;
 
                     for (let row of json) {
-                        // Buscar encabezados de forma flexible (mayúsculas o minúsculas)
                         const rawCod = row["CODIGO"] !== undefined ? row["CODIGO"] : (row["codigo"] !== undefined ? row["codigo"] : row["Codigo"]);
                         const rawCant = row["CANTIDAD"] !== undefined ? row["CANTIDAD"] : (row["cantidad"] !== undefined ? row["cantidad"] : row["Cantidad"]);
 
                         if (rawCod !== undefined && rawCant !== undefined && String(rawCod).trim() !== "") {
-                            const codStr = String(rawCod).trim();
-                            const cantNum = parseFloat(rawCant) || 0;
-                            const dataMaestro = maestroMap[codStr];
-
-                            // Llenar datos basándose en el maestro si existe, de lo contrario valores por defecto
-                            const nom = dataMaestro ? dataMaestro.nom.replace(/['"]/g, '') : "Desconocido (Carga Masiva)";
-                            const pos = dataMaestro ? dataMaestro.pos : "---";
-                            const teorico = dataMaestro ? dataMaestro.stock : 0;
-
-                            // Inyectar en Firebase bajo la misma estructura del operario
-                            await push(dbRefRegistros, {
-                                cod: codStr,
-                                nom: nom,
-                                pos: pos,
-                                cant: String(cantNum),
-                                teorico: teorico,
-                                fecha: new Date().toLocaleString(),
-                                usuario: usuario
+                            registrosValidos.push({
+                                cod: String(rawCod).trim(),
+                                cant: parseFloat(rawCant) || 0
                             });
-                            conteoExito++;
                         } else {
                             conteoFallo++;
                         }
                     }
 
-                    fileInput.value = ""; // Limpiar el input
+                    // --- MEJORA 1: LIMPIEZA PROACTIVA DE MEMORIA RAM (Garbage Collection) ---
+                    // Eliminamos los objetos pesados del Excel para evitar saturar el navegador
+                    json = null;
+                    wb = null;
+                    sheet = null;
+                    data = null;
+
+                    let conteoExito = 0;
+                    const totalRegistros = registrosValidos.length;
+                    const CHUNK_SIZE = 500; // Procesar de 500 en 500
+
+                    // --- MEJORA 2: PROCESAMIENTO POR FRAGMENTOS (Chunking) ---
+                    for (let i = 0; i < totalRegistros; i += CHUNK_SIZE) {
+                        const chunk = registrosValidos.slice(i, i + CHUNK_SIZE);
+                        const updates = {}; // Objeto para almacenar todo el lote
+
+                        chunk.forEach(record => {
+                            const dataMaestro = maestroMap[record.cod];
+                            const nom = dataMaestro ? dataMaestro.nom.replace(/['"]/g, '') : "Desconocido (Carga Masiva)";
+                            const pos = dataMaestro ? dataMaestro.pos : "---";
+                            const teorico = dataMaestro ? dataMaestro.stock : 0;
+
+                            // Generar ID único localmente sin consumir recursos de red
+                            const newKey = push(dbRefRegistros).key;
+
+                            // Preparamos la inserción en el objeto masivo
+                            updates[`registros/${newKey}`] = {
+                                cod: record.cod,
+                                nom: nom,
+                                pos: pos,
+                                cant: String(record.cant),
+                                teorico: teorico,
+                                fecha: new Date().toLocaleString(),
+                                usuario: usuario
+                            };
+                        });
+
+                        // --- MEJORA 3: INSERCIÓN EN LOTE (Multi-path Update) ---
+                        // En lugar de enviar uno por uno, enviamos los 500 registros en 1 sola petición
+                        await update(ref(db), updates);
+                        conteoExito += chunk.length;
+
+                        // Actualizar UI para mostrar el progreso en tiempo real
+                        statusBox.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Subiendo registros... (${conteoExito} de ${totalRegistros})`;
+
+                        // Liberar el hilo principal temporalmente para evitar que se congele la pantalla
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+
+                    fileInput.value = ""; 
                     btnSubir.disabled = false;
                     btnSubir.style.opacity = '1';
 
