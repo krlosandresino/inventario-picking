@@ -6,7 +6,7 @@
     <title>👤 Operarios - Muestreo</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, onValue, get, set, remove } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        import { getDatabase, ref, push, onValue, get, set, remove, onChildAdded, onChildRemoved } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         // --- CONEXIÓN ORIGINAL PARA DATOS DE MUESTREO ---
         const firebaseConfig = {
@@ -39,9 +39,14 @@
         let inventarioMaestro = [];
         let usuarioActual = "";
         let codigosContadosGlobal = new Set();
+        let mapRegistrosPorCodigo = new Map();
         
-        // --- NUEVA VARIABLE: AUDITORÍA EN CALIENTE ---
         let auditoriaGlobal = {};
+
+        // --- VARIABLES PARA RENDERIZADO PARCIAL (LAZY LOADING) ---
+        let listaFiltradaOp = [];
+        let itemsCargadosOp = 0;
+        const itemsPorPaginaOp = 30;
 
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
@@ -136,7 +141,14 @@
             }
         }
 
-        window.onload = () => { document.getElementById('userOp').focus(); };
+        window.onload = () => { 
+            document.getElementById('userOp').focus(); 
+            document.getElementById('listaMaestro').addEventListener('scroll', function() {
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 20) {
+                    window.renderizarSiguientePaginaOp();
+                }
+            });
+        };
 
         window.iniciarSesionOp = () => {
             const user = document.getElementById('userOp').value.trim();
@@ -168,8 +180,6 @@
                         solicitarWakeLock();
                         
                         iniciarMonitoreoBateria(usuarioActual);
-                        
-                        get(dbRefRegistros).then((snapshot) => actualizarDashboard(snapshot.val()));
                     } else {
                         alert("Acceso denegado. PIN incorrecto o no tiene permisos para el módulo de Muestreo.");
                     }
@@ -210,23 +220,22 @@
             }, 2000);
         };
 
-        function actualizarDashboard(registros) {
+        function actualizarDashboard() {
             if (!inventarioMaestro.length) return;
-            const codigosContados = new Set(Object.values(registros || {}).map(r => r.cod));
             const totalMaestro = inventarioMaestro.length;
-            const avance = codigosContados.size;
-            const porcentaje = Math.round((avance / totalMaestro) * 100);
+            const avance = codigosContadosGlobal.size;
+            const porcentaje = totalMaestro > 0 ? Math.round((avance / totalMaestro) * 100) : 0;
             document.getElementById('barrita').style.width = porcentaje + "%";
             document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
         }
 
-        // --- LÓGICA DE ESCUCHA DE AUDITORÍA (SIN PERDER EL FOCO) ---
+        // --- LÓGICA DE ESCUCHA DE AUDITORÍA ---
         onValue(ref(db, 'auditoria'), (snap) => {
             auditoriaGlobal = snap.val() || {};
             const tarjetas = document.querySelectorAll('.rc-wrapper');
             
             tarjetas.forEach(tarjeta => {
-                const cod = tarjeta.querySelector('.rc-cod').innerText;
+                const cod = tarjeta.id.replace('card_', '');
                 const badgeEl = tarjeta.querySelector('.badge-auditoria');
                 
                 if (auditoriaGlobal[cod]) {
@@ -248,8 +257,8 @@
                 
                 document.getElementById('sectionPicking').style.display = 'block';
                 if(navigator.onLine) document.getElementById('statusInv').innerText = "🛜📶 INVENTARIO EN LÍNEA";
-                get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
-                renderizarListaMaestro();
+                actualizarDashboard();
+                window.aplicarFiltroYRenderizar();
             } else {
                 inventarioMaestro = [];
                 document.getElementById('listaMaestro').innerHTML = "";
@@ -257,77 +266,90 @@
             }
         });
 
-        onValue(dbRefRegistros, (snap) => {
-            const registros = snap.val() || {};
-            actualizarDashboard(registros);
+        // --- EVENTOS ESPECÍFICOS: onChildAdded y onChildRemoved ---
+        onChildAdded(dbRefRegistros, (snap) => {
+            const reg = snap.val();
+            const cod = String(reg.cod);
+            const currentCount = mapRegistrosPorCodigo.get(cod) || 0;
+            mapRegistrosPorCodigo.set(cod, currentCount + 1);
             
-            codigosContadosGlobal = new Set(Object.values(registros).map(r => String(r.cod)));
-            const filtro = document.getElementById('buscadorCodigo').value;
-            const tarjetas = document.querySelectorAll('.rc-wrapper');
-            
-            tarjetas.forEach(tarjeta => {
-                const cod = tarjeta.querySelector('.rc-cod').innerText;
+            if (currentCount === 0) {
+                codigosContadosGlobal.add(cod);
+                actualizarDashboard();
                 
-                if (codigosContadosGlobal.has(cod)) {
-                    tarjeta.style.display = 'none';
-                } else {
-                    const inputEl = tarjeta.querySelector('.rc-input');
-                    const btnRegistrar = tarjeta.querySelector('.rc-btn');
-                    
-                    tarjeta.style.opacity = '1';
-                    tarjeta.style.transform = 'scale(1)';
-                    if (inputEl) {
-                        inputEl.disabled = false;
-                        inputEl.style.opacity = '1';
-                    }
-                    if (btnRegistrar) {
-                        btnRegistrar.disabled = false;
-                        btnRegistrar.style.opacity = '1';
-                    }
-                    
-                    if (cod.includes(filtro)) {
-                        tarjeta.style.display = 'flex';
-                    } else {
-                        tarjeta.style.display = 'none';
-                    }
+                const tarjeta = document.getElementById('card_' + cod);
+                if (tarjeta) {
+                    tarjeta.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+                    tarjeta.style.opacity = '0';
+                    tarjeta.style.transform = 'scale(0.95)';
+                    setTimeout(() => tarjeta.style.display = 'none', 200);
                 }
-            });
+            }
         });
 
-        window.renderizarListaMaestro = () => {
-            const contenedor = document.getElementById('listaMaestro');
-            let html = "";
-            const filtro = document.getElementById('buscadorCodigo').value;
+        onChildRemoved(dbRefRegistros, (snap) => {
+            const reg = snap.val();
+            const cod = String(reg.cod);
+            const currentCount = mapRegistrosPorCodigo.get(cod) || 0;
+            
+            if (currentCount > 1) {
+                mapRegistrosPorCodigo.set(cod, currentCount - 1);
+            } else {
+                mapRegistrosPorCodigo.delete(cod);
+                codigosContadosGlobal.delete(cod);
+                actualizarDashboard();
+                window.aplicarFiltroYRenderizar();
+            }
+        });
 
-            inventarioMaestro.forEach((item, index) => {
+        // --- FILTRADO EN MEMORIA Y RENDERIZADO PARCIAL ---
+        window.aplicarFiltroYRenderizar = () => {
+            const filtro = document.getElementById('buscadorCodigo').value;
+            listaFiltradaOp = inventarioMaestro.filter(item => {
+                const codStr = String(item.cod);
+                if (codigosContadosGlobal.has(codStr)) return false; 
+                if (filtro && !codStr.includes(filtro)) return false; 
+                return true;
+            });
+            
+            document.getElementById('listaMaestro').innerHTML = "";
+            itemsCargadosOp = 0;
+            window.renderizarSiguientePaginaOp();
+        };
+
+        window.renderizarSiguientePaginaOp = () => {
+            const chunk = listaFiltradaOp.slice(itemsCargadosOp, itemsCargadosOp + itemsPorPaginaOp);
+            if (chunk.length === 0) return;
+            
+            let html = "";
+            chunk.forEach((item) => {
                 const nombreOriginal = item.nom || '';
                 const nombreCorto = nombreOriginal.length > 25 ? nombreOriginal.substring(0, 25) + '...' : nombreOriginal;
                 const nomLimpio = nombreOriginal.replace(/['"]/g, ''); 
+                const isAuditoria = auditoriaGlobal[item.cod];
                 
-                const displayStyle = (codigosContadosGlobal.has(String(item.cod))) ? 'none' : 
-                                     (String(item.cod).includes(filtro) ? 'flex' : 'none');
-                
-                // Se agregó la clase rc-auditoria y el badge condicional
                 html += `
-                <div class="result-card rc-wrapper ${auditoriaGlobal[item.cod] ? 'rc-auditoria' : ''}" style="display: ${displayStyle};">
+                <div class="result-card rc-wrapper ${isAuditoria ? 'rc-auditoria' : ''}" id="card_${item.cod}" style="display: flex;">
                     <div class="rc-info-col">
                         <div class="rc-cod-row">
                             <span class="rc-cod">${item.cod}</span>
                             <span class="rc-pos">${item.pos}</span>
-                            <span class="badge-auditoria" style="display: ${auditoriaGlobal[item.cod] ? 'inline-block' : 'none'}; background:var(--warning); color:#fff; padding:2px 5px; border-radius:4px; font-size:0.65rem; font-weight:bold; margin-left:4px; white-space: nowrap; flex-shrink: 0;">⚠️ RECONTEO</span>
+                            <span class="badge-auditoria" style="display: ${isAuditoria ? 'inline-block' : 'none'}; background:var(--warning); color:#fff; padding:2px 5px; border-radius:4px; font-size:0.65rem; font-weight:bold; margin-left:4px; white-space: nowrap; flex-shrink: 0;">⚠️ RECONTEO</span>
                         </div>
                         <span class="nombre-movil" style="font-size:0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${nombreCorto}</span>
                     </div>
                     <div class="rc-actions">
-                        <input type="text" id="cant_${index}" inputmode="numeric" placeholder="Cant." 
+                        <input type="text" id="cant_${item.cod}" inputmode="numeric" placeholder="Cant." 
                             class="rc-input"
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')"
-                            onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this.nextElementSibling)">
-                        <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${index}', this)" class="btn-main rc-btn">Registrar</button>
+                            onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${item.cod}', this.nextElementSibling)">
+                        <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${item.cod}', this)" class="btn-main rc-btn">Registrar</button>
                     </div>
                 </div>`;
             });
-            contenedor.innerHTML = html;
+            
+            document.getElementById('listaMaestro').insertAdjacentHTML('beforeend', html);
+            itemsCargadosOp += itemsPorPaginaOp;
         };
 
         window.registrarItemMaestro = (cod, nom, pos, teorico, inputId, btnEl) => {
@@ -353,7 +375,6 @@
                 usuario: usuarioActual 
             });
             
-            // Limpiamos la alerta de auditoría si el código la tenía
             if (auditoriaGlobal[cod]) {
                 remove(ref(db, `auditoria/${cod}`));
             }
@@ -363,7 +384,7 @@
 
             mostrarToast(`✅ Guardado: ${cod}`);
 
-            const tarjeta = btnEl.closest('.rc-wrapper');
+            const tarjeta = document.getElementById('card_' + cod);
             if (tarjeta) {
                 tarjeta.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
                 tarjeta.style.opacity = '0';
@@ -375,16 +396,7 @@
         window.filtrarCodigos = () => {
             clearTimeout(debounceTimerBusqueda);
             debounceTimerBusqueda = setTimeout(() => {
-                const filtro = document.getElementById('buscadorCodigo').value;
-                const tarjetas = document.querySelectorAll('.rc-wrapper');
-                tarjetas.forEach(tarjeta => {
-                    const cod = tarjeta.querySelector('.rc-cod').innerText;
-                    if (cod.includes(filtro) && !codigosContadosGlobal.has(cod)) {
-                        tarjeta.style.display = 'flex';
-                    } else {
-                        tarjeta.style.display = 'none';
-                    }
-                });
+                window.aplicarFiltroYRenderizar();
             }, 300); 
         };
     </script>
