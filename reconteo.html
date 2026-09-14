@@ -125,7 +125,8 @@
             calcularPendientesDebounced();
         });
 
-        onValue(dbRefMaestro, (snap) => {
+        // OPTIMIZACIÓN RED: Se usa get() en lugar de onValue() para datos estáticos del operador
+        get(dbRefMaestro).then((snap) => {
             const data = snap.val() || [];
             inventarioMaestro = {};
             data.forEach(item => { if(item.cod) inventarioMaestro[item.cod] = item; });

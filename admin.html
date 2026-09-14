@@ -422,6 +422,7 @@
             renderizarSiguientePagina();
         };
 
+        // OPTIMIZACIÓN RENDIMIENTO DOM: Implementación de DocumentFragment
         function renderizarSiguientePagina() {
             const chunk = listaFiltradaGlobal.slice(itemsCargados, itemsCargados + itemsPorPagina);
             if (chunk.length === 0) return;
@@ -448,18 +449,27 @@
                     </tr>`;
             }).join('');
 
-            document.getElementById('bodyMonitor').insertAdjacentHTML('beforeend', html);
+            const fragment = document.createDocumentFragment();
+            const tempDiv = document.createElement('tbody');
+            tempDiv.innerHTML = html;
+            while(tempDiv.firstChild) {
+                fragment.appendChild(tempDiv.firstChild);
+            }
+            document.getElementById('bodyMonitor').appendChild(fragment);
             itemsCargados += itemsPorPagina;
         }
 
+        // OPTIMIZACIÓN RENDIMIENTO DOM: Observer para Infinite Scroll
         setTimeout(() => {
-            const scrollContainers = document.querySelectorAll('.scroll');
-            if(scrollContainers.length > 0) {
-                scrollContainers[0].addEventListener('scroll', function() {
-                    if (this.scrollTop + this.clientHeight >= this.scrollHeight - 20) {
+            const scrollContainer = document.querySelector('.scroll');
+            const sentinel = document.getElementById('sentinelaAdmin');
+            if(scrollContainer && sentinel) {
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting) {
                         renderizarSiguientePagina();
                     }
-                });
+                }, { root: scrollContainer, rootMargin: '100px' });
+                observer.observe(sentinel);
             }
         }, 300);
 
@@ -692,6 +702,8 @@
                     </thead>
                     <tbody id="bodyMonitor"></tbody>
                 </table>
+                <!-- Elemento centinela para Infinite Scroll optimizado -->
+                <div id="sentinelaAdmin" style="height: 1px;"></div>
             </div>
         </div>
         <div class="section">

@@ -70,10 +70,10 @@
 
         onValue(dbRefRegistros, (snapshot) => {
             registrosGlobales = snapshot.val() || {};
-            renderUsuarios(registrosGlobales);
             
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
+                renderUsuarios(registrosGlobales);
                 procesarDatosMonitor();
             }, 300); 
         });
@@ -88,17 +88,23 @@
             const inputBusqueda = document.getElementById('busquedaRealTime');
             const usuarioActual = inputBusqueda ? inputBusqueda.value : '';
             
+            const bateriasMap = {};
+            Object.keys(bateriasGlobal).forEach(k => {
+                bateriasMap[String(k).toUpperCase()] = bateriasGlobal[k];
+            });
+            
             document.getElementById('countUsuarios').innerText = userList.length;
             document.getElementById('bodyUsuarios').innerHTML = userList.map(u => {
                 const isSelected = u === usuarioActual;
                 const estiloFondo = isSelected ? 'background-color: #eef2ff; box-shadow: inset 4px 0 0 var(--primary);' : '';
                 
                 let infoBateria = '';
-                const keyBateria = Object.keys(bateriasGlobal).find(k => String(k).toUpperCase() === String(u).toUpperCase());
+                const keyUsuario = String(u).toUpperCase();
+                const objBateria = bateriasMap[keyUsuario];
 
-                if(keyBateria && bateriasGlobal[keyBateria]) {
-                    const nivel = Math.round(bateriasGlobal[keyBateria].nivel * 100);
-                    const icono = bateriasGlobal[keyBateria].cargando ? '⚡' : (nivel <= 20 ? '🪫' : '🔋');
+                if(objBateria) {
+                    const nivel = Math.round(objBateria.nivel * 100);
+                    const icono = objBateria.cargando ? '⚡' : (nivel <= 20 ? '🪫' : '🔋');
                     const colorTexto = nivel <= 20 ? '#e71d36' : '#666'; 
                     infoBateria = `<span style="font-size:0.75rem; color:${colorTexto}; float:right; font-weight:normal; margin-top:2px;">${icono} ${nivel}%</span>`;
                 }
@@ -211,7 +217,7 @@
                 agrupados[i.cod].listaUsuarios.add(i.usuario);
             });
 
-            const codigosRegistrados = Object.keys(agrupados);
+            const codigosRegistrados = new Set(Object.keys(agrupados));
             
             const rows = Object.values(agrupados).map(i => ({ 
                 Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
@@ -221,7 +227,7 @@
             }));
 
             dataMaestro.forEach(m => {
-                if (!codigosRegistrados.includes(String(m.cod))) {
+                if (!codigosRegistrados.has(String(m.cod))) {
                     rows.push({
                         Ubicacion: m.pos, Codigo: m.cod, Producto: m.nom, Stock: m.stock,
                         Encontrados: 0, Diferencia: 0 - (m.stock || 0),

@@ -221,7 +221,8 @@
             document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
         }
 
-        onValue(dbRefMaestro, (snapshot) => {
+        // OPTIMIZACIÓN RED: Se reemplaza onValue por get para cargar el maestro sin dejar un listener abierto en el móvil
+        get(dbRefMaestro).then((snapshot) => {
             const data = snapshot.val();
             if (data) {
                 inventarioMaestro = Object.values(data);
