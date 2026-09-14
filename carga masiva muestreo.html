@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📤 Carga Masiva - Muestreo</title>
+    <title>📤 Carga Masiva - Inventario</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        // Añadido "update" para permitir la inserción en lote
         import { getDatabase, ref, push, get, update } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         // --- CONEXIÓN A LA BASE DE DATOS PRINCIPAL ---
@@ -27,6 +26,17 @@
         const db = getDatabase(app);
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
+
+        // --- LÓGICA DE ACCESO POR PIN ---
+        window.validarAccesoCarga = () => {
+            const pin = document.getElementById('pinLog').value;
+            if (pin === "2026") {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+            } else { 
+                alert("PIN Incorrecto"); 
+            }
+        };
 
         window.procesarExcel = async (event) => {
             const usuarioInput = document.getElementById('usuarioCarga').value.trim();
@@ -49,13 +59,11 @@
             reader.readAsArrayBuffer(file);
             reader.onload = async (e) => {
                 try {
-                    // Usamos let en lugar de const para poder destruirlas de la RAM luego
                     let data = new Uint8Array(e.target.result);
                     let wb = XLSX.read(data, { type: 'array' });
                     let sheet = wb.Sheets[wb.SheetNames[0]];
                     let json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-                    // Descargar maestro para cruzar datos
                     const snapMaestro = await get(dbRefMaestro);
                     const maestroData = snapMaestro.val() || [];
                     const maestroMap = {};
@@ -63,7 +71,6 @@
                         maestroMap[String(item.cod).trim()] = item;
                     });
 
-                    // 1. Filtrar la información primero
                     const registrosValidos = [];
                     let conteoFallo = 0;
 
@@ -81,8 +88,7 @@
                         }
                     }
 
-                    // --- MEJORA 1: LIMPIEZA PROACTIVA DE MEMORIA RAM (Garbage Collection) ---
-                    // Eliminamos los objetos pesados del Excel para evitar saturar el navegador
+                    // Limpieza proactiva de RAM
                     json = null;
                     wb = null;
                     sheet = null;
@@ -90,12 +96,12 @@
 
                     let conteoExito = 0;
                     const totalRegistros = registrosValidos.length;
-                    const CHUNK_SIZE = 500; // Procesar de 500 en 500
+                    const CHUNK_SIZE = 500; 
 
-                    // --- MEJORA 2: PROCESAMIENTO POR FRAGMENTOS (Chunking) ---
+                    // Procesamiento por fragmentos e inserción en lote
                     for (let i = 0; i < totalRegistros; i += CHUNK_SIZE) {
                         const chunk = registrosValidos.slice(i, i + CHUNK_SIZE);
-                        const updates = {}; // Objeto para almacenar todo el lote
+                        const updates = {}; 
 
                         chunk.forEach(record => {
                             const dataMaestro = maestroMap[record.cod];
@@ -103,10 +109,8 @@
                             const pos = dataMaestro ? dataMaestro.pos : "---";
                             const teorico = dataMaestro ? dataMaestro.stock : 0;
 
-                            // Generar ID único localmente sin consumir recursos de red
                             const newKey = push(dbRefRegistros).key;
 
-                            // Preparamos la inserción en el objeto masivo
                             updates[`registros/${newKey}`] = {
                                 cod: record.cod,
                                 nom: nom,
@@ -118,15 +122,11 @@
                             };
                         });
 
-                        // --- MEJORA 3: INSERCIÓN EN LOTE (Multi-path Update) ---
-                        // En lugar de enviar uno por uno, enviamos los 500 registros en 1 sola petición
                         await update(ref(db), updates);
                         conteoExito += chunk.length;
 
-                        // Actualizar UI para mostrar el progreso en tiempo real
                         statusBox.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Subiendo registros... (${conteoExito} de ${totalRegistros})`;
 
-                        // Liberar el hilo principal temporalmente para evitar que se congele la pantalla
                         await new Promise(resolve => setTimeout(resolve, 50));
                     }
 
@@ -152,6 +152,14 @@
     <style>
         :root { --primary: #1a73e8; --bg: #f4f7fe; --success: #2ec4b6; --danger: #e71d36; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; user-select: none; }
+        
+        /* --- ESTILOS PANTALLA LOGIN --- */
+        #loginOverlay { position: fixed; inset: 0; background: linear-gradient(135deg, #1a73e8, #003c96); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); width: 350px; text-align: center; }
+        .login-card input { width: 100%; padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 10px; box-sizing: border-box; text-align: center; font-size: 1rem; }
+        .btn-login { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        
+        /* --- ESTILOS PANTALLA PRINCIPAL --- */
         .card-upload { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.15); width: 400px; text-align: center; }
         .card-upload i.fa-file-excel { font-size: 4rem; color: #15803d; margin-bottom: 15px; }
         .card-upload h2 { margin: 0 0 5px 0; color: #333; }
@@ -177,29 +185,48 @@
 </head>
 <body>
 
-<div class="card-upload">
-    <i class="fa-solid fa-file-excel"></i>
-    <h2>Carga Masiva</h2>
-    <p>Sube tu archivo de conteos pre-registrados</p>
-
-    <div class="excel-hint">
-        El archivo Excel <b>debe</b> contener estas dos columnas en la primera fila:<br>
-        1. <span>CODIGO</span><br>
-        2. <span>CANTIDAD</span>
+<!-- PANTALLA DE SEGURIDAD -->
+<div id="loginOverlay">
+    <div class="login-card">
+        <i class="fa-solid fa-shield-halved" style="font-size: 3.5rem; color: var(--primary); margin-bottom: 10px;"></i>
+        <h2>Acceso Restringido</h2>
+        <input type="password" id="pinLog" placeholder="Ingrese el PIN" autocomplete="off" inputmode="numeric">
+        <button class="btn-login" onclick="validarAccesoCarga()">ENTRAR</button>
     </div>
-
-    <div class="input-group">
-        <label for="usuarioCarga"><i class="fa-solid fa-user"></i> Nombre de Operador (Opcional)</label>
-        <input type="text" id="usuarioCarga" placeholder="Ej: CARGA MASIVA" autocomplete="off" oninput="this.value = this.value.toUpperCase()">
-    </div>
-
-    <input type="file" id="inputExcelCount" accept=".xlsx" style="display:none" onchange="procesarExcel(event)">
-    <button class="btn-upload" id="btnSubir" onclick="document.getElementById('inputExcelCount').click()">
-        <i class="fa-solid fa-cloud-arrow-up"></i> Seleccionar Excel y Subir
-    </button>
-
-    <div id="statusMsg" class="status-box"></div>
 </div>
 
+<!-- PANTALLA PRINCIPAL (Oculta hasta colocar el PIN) -->
+<div id="mainContent" style="display: none;">
+    <div class="card-upload">
+        <i class="fa-solid fa-file-excel"></i>
+        <h2>Carga Masiva Inventario</h2>
+        <p>Sube tu archivo de conteos pre-registrados</p>
+
+        <div class="excel-hint">
+            El archivo Excel <b>debe</b> contener estas dos columnas en la primera fila:<br>
+            1. <span>CODIGO</span><br>
+            2. <span>CANTIDAD</span>
+        </div>
+
+        <div class="input-group">
+            <label for="usuarioCarga"><i class="fa-solid fa-user"></i> Nombre de Operador (Opcional)</label>
+            <input type="text" id="usuarioCarga" placeholder="Ej: JUAN PEREZ" autocomplete="off" oninput="this.value = this.value.toUpperCase()">
+        </div>
+
+        <input type="file" id="inputExcelCount" accept=".xlsx" style="display:none" onchange="procesarExcel(event)">
+        <button class="btn-upload" id="btnSubir" onclick="document.getElementById('inputExcelCount').click()">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Buscar archivo y Cargar a la base
+        </button>
+
+        <div id="statusMsg" class="status-box"></div>
+    </div>
+</div>
+
+<script>
+    // Permitir ingresar con la tecla Enter en la pantalla de PIN
+    document.getElementById('pinLog').addEventListener('keydown', (e) => { 
+        if(e.key === 'Enter') validarAccesoCarga(); 
+    });
+</script>
 </body>
 </html>
