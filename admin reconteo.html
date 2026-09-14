@@ -6,7 +6,7 @@
     <title>🛠️ Admin - Reconteo</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Librería SheetJS para descargar Excel real -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
         import { getDatabase, ref, get, remove, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
@@ -38,6 +38,13 @@
         let colOrdenActual = null;
         let ordenAscendente = true;
 
+        // --- NUEVAS VARIABLES GLOBALES AÑADIDAS ---
+        let debounceTimerReconteo;
+        let listaDescuadradosGlobal = [];
+        let listaFiltradaReconteo = [];
+        let itemsCargados = 0;
+        const itemsPorPagina = 50;
+
         window.validarAcceso = () => {
             const pass = document.getElementById('passLog').value;
             if (pass === "2026") { 
@@ -46,10 +53,17 @@
             } else { alert("Acceso Incorrecto"); }
         };
 
+        function triggerProcesar() {
+            clearTimeout(debounceTimerReconteo);
+            debounceTimerReconteo = setTimeout(() => {
+                procesarTablaComparativa();
+            }, 300);
+        }
+
         onValue(dbRefMaestro, snap => {
             dataMaestro = {};
             (snap.val() || []).forEach(i => { if(i.cod) dataMaestro[i.cod] = i; });
-            procesarTablaComparativa();
+            triggerProcesar();
         });
 
         onValue(dbRefRegistros1, snap => {
@@ -60,7 +74,7 @@
                 conteo1[d[k].cod].cant += parseFloat(d[k].cant || 0);
                 if (d[k].usuario) conteo1[d[k].cod].usuarios.add(d[k].usuario);
             }
-            procesarTablaComparativa();
+            triggerProcesar();
         });
 
         onValue(dbRefReconteo, snap => {
@@ -72,7 +86,7 @@
                 conteo2[d[k].cod].usuarios.add(d[k].usuario);
                 conteo2[d[k].cod].keys.push(k);
             }
-            procesarTablaComparativa();
+            triggerProcesar();
         });
 
         // Función para cambiar la columna de orden
@@ -243,26 +257,6 @@
             document.getElementById('countConfirmados').innerText = `(${cantidadConfirmados} | ${pctConfirmados}%)`;
             document.getElementById('countNoCoincidenBtn').innerText = `(${noCoinciden} | ${pctNoCoinciden}%)`;
 
-            document.getElementById('bodyMonitor').innerHTML = descuadradosData.map(reg => {
-                let colorDif1 = reg.dif1 === 0 ? '#2ec4b6' : (reg.dif1 < 0 ? '#e71d36' : '#4361ee');
-                let colorDif2 = reg.difFinal === "-" ? '#888' : (reg.difFinal === 0 ? '#2ec4b6' : (reg.difFinal < 0 ? '#e71d36' : '#4361ee'));
-                
-                return `
-                    <tr>
-                        <td><span class="${reg.usuario1 === '---' ? 'badge-pendiente' : 'user-pill'}">${reg.usuario1}</span></td>
-                        <td style="user-select: text; cursor: text;" title="Seleccionar código"><b>${reg.cod}</b></td>
-                        <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
-                        <td align="center">${reg.teorico}</td>
-                        <td align="center" style="background:#fef2f2;">${reg.fisico1} <small style="color:${colorDif1}">(${reg.dif1 > 0 ? '+'+reg.dif1 : reg.dif1})</small></td>
-                        <td align="center" style="background:#eff6ff; font-weight:bold;">${reg.fisico2}</td>
-                        <td align="center" style="color:${colorDif2}; font-weight:bold;">${reg.difFinal > 0 ? '+'+reg.difFinal : reg.difFinal}</td>
-                        <td><span class="${reg.usuario === 'Pendiente' ? 'badge-pendiente' : 'user-pill'}">${reg.usuario}</span></td>
-                        <td align="center">
-                            ${reg.fisico2 !== "-" ? `<button class="btn-action-delete" onclick="eliminarReconteo('${reg.cod}')" title="Borrar Reconteo">🗑️</button>` : ''}
-                        </td>
-                    </tr>`;
-            }).join('');
-
             // --- ACTUALIZAR DOM DE ESTADÍSTICAS DE PRECISIÓN ---
             const calcPct = (val, total) => total > 0 ? ((val / total) * 100).toFixed(1) : 0;
             
@@ -283,6 +277,7 @@
             const eriValue = calcPct(generalStats.cuad, generalStats.total);
             document.getElementById('st-eri-final').innerText = `${eriValue}%`;
 
+            listaDescuadradosGlobal = descuadradosData; // Pasamos los datos a la variable global
             ejecutarFiltro(); 
         }
 
@@ -361,66 +356,101 @@
 
         window.ejecutarFiltro = () => {
             const term = document.getElementById('busquedaRealTime').value.toLowerCase();
-            const filas = document.querySelectorAll('#bodyMonitor tr');
             
-            filas.forEach(fila => {
-                const textoFila = fila.innerText.toLowerCase();
+            listaFiltradaReconteo = listaDescuadradosGlobal.filter(reg => {
+                const textoFila = `${reg.usuario1} ${reg.cod} ${reg.pos} ${reg.usuario}`.toLowerCase();
                 let cumpleEstado = true;
                 
-                const celdas = fila.querySelectorAll('td');
-                if (celdas.length >= 8) {
-                    const difFinalText = celdas[6].innerText.trim();
-                    // Extraemos solo el valor numérico base del 1er Conteo (sin el pequeño diferencial entre paréntesis)
-                    const conteo1Text = celdas[4].innerText.split('(')[0].trim(); 
-                    const reconteoText = celdas[5].innerText.trim();
-                    
-                    if (filtroEstadoReconteo === 'resueltos') {
-                        if (difFinalText !== "0" && difFinalText !== "+0" && difFinalText !== "-0") {
-                            cumpleEstado = false;
-                        }
-                    } else if (filtroEstadoReconteo === 'confirmados') {
-                        if (difFinalText === "0" || difFinalText === "+0" || difFinalText === "-0" || difFinalText === "-") {
-                            cumpleEstado = false;
-                        }
-                    } else if (filtroEstadoReconteo === 'nocoinciden') {
-                        if (reconteoText === "-" || conteo1Text === reconteoText) {
-                            cumpleEstado = false;
-                        }
-                    }
+                if (filtroEstadoReconteo === 'resueltos') {
+                    if (reg.difFinal !== 0) cumpleEstado = false;
+                } else if (filtroEstadoReconteo === 'confirmados') {
+                    if (reg.difFinal === 0 || reg.difFinal === "-") cumpleEstado = false;
+                } else if (filtroEstadoReconteo === 'nocoinciden') {
+                    if (reg.fisico2 === "-" || reg.fisico1 === reg.fisico2) cumpleEstado = false;
                 }
 
-                fila.style.display = (textoFila.includes(term) && cumpleEstado) ? "" : "none";
+                return textoFila.includes(term) && cumpleEstado;
             });
+
+            itemsCargados = 0;
+            document.getElementById('bodyMonitor').innerHTML = "";
+            renderizarSiguientePaginaReconteo();
         };
 
-        // Exportación directa a Excel real
-        window.descargarExcel = () => {
-            const filas = document.querySelectorAll('#bodyMonitor tr');
-            let data = [["Op. 1er Conteo", "Código", "Ubicación", "Stock", "1er Conteo", "Reconteo Final", "Dif. Final", "Operador Reconteo"]];
-            
-            filas.forEach(fila => {
-                if (fila.style.display !== "none") {
-                    const celdas = fila.querySelectorAll('td');
-                    if (celdas.length >= 8) {
-                        const operador1 = celdas[0].innerText.trim();
-                        const codigo = celdas[1].innerText.trim();
-                        const ubicacion = celdas[2].innerText.trim();
-                        const teorico = celdas[3].innerText.trim();
-                        const conteo1 = celdas[4].innerText.trim().replace(/\n/g, ' ').replace(/\s+/g, ' '); 
-                        const conteo2 = celdas[5].innerText.trim();
-                        const difFinal = celdas[6].innerText.trim();
-                        const operador = celdas[7].innerText.trim();
-                        
-                        data.push([operador1, codigo, ubicacion, teorico, conteo1, conteo2, difFinal, operador]);
-                    }
-                }
-            });
+        function renderizarSiguientePaginaReconteo() {
+            const chunk = listaFiltradaReconteo.slice(itemsCargados, itemsCargados + itemsPorPagina);
+            if (chunk.length === 0) return;
 
-            // Generar y descargar el archivo Excel usando SheetJS
-            const ws = XLSX.utils.aoa_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Reconteo Auditoria");
-            XLSX.writeFile(wb, "Reporte_Auditoria_Reconteo.xlsx");
+            const html = chunk.map(reg => {
+                let colorDif1 = reg.dif1 === 0 ? '#2ec4b6' : (reg.dif1 < 0 ? '#e71d36' : '#4361ee');
+                let colorDif2 = reg.difFinal === "-" ? '#888' : (reg.difFinal === 0 ? '#2ec4b6' : (reg.difFinal < 0 ? '#e71d36' : '#4361ee'));
+                
+                return `
+                    <tr>
+                        <td><span class="${reg.usuario1 === '---' ? 'badge-pendiente' : 'user-pill'}">${reg.usuario1}</span></td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar código"><b>${reg.cod}</b></td>
+                        <td style="user-select: text; cursor: text;" title="Seleccionar ubicación"><b style="color:#4361ee">${reg.pos}</b></td>
+                        <td align="center">${reg.teorico}</td>
+                        <td align="center" style="background:#fef2f2;">${reg.fisico1} <small style="color:${colorDif1}">(${reg.dif1 > 0 ? '+'+reg.dif1 : reg.dif1})</small></td>
+                        <td align="center" style="background:#eff6ff; font-weight:bold;">${reg.fisico2}</td>
+                        <td align="center" style="color:${colorDif2}; font-weight:bold;">${reg.difFinal > 0 ? '+'+reg.difFinal : reg.difFinal}</td>
+                        <td><span class="${reg.usuario === 'Pendiente' ? 'badge-pendiente' : 'user-pill'}">${reg.usuario}</span></td>
+                        <td align="center">
+                            ${reg.fisico2 !== "-" ? `<button class="btn-action-delete" onclick="eliminarReconteo('${reg.cod}')" title="Borrar Reconteo">🗑️</button>` : ''}
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            document.getElementById('bodyMonitor').insertAdjacentHTML('beforeend', html);
+            itemsCargados += itemsPorPagina;
+        }
+
+        setTimeout(() => {
+            const scrollContainers = document.querySelectorAll('.scroll');
+            if(scrollContainers.length > 0) {
+                scrollContainers[0].addEventListener('scroll', function() {
+                    if (this.scrollTop + this.clientHeight >= this.scrollHeight - 20) {
+                        renderizarSiguientePaginaReconteo();
+                    }
+                });
+            }
+        }, 300);
+
+        // Exportación directa a Excel real
+        window.descargarExcel = async () => {
+            const btn = document.querySelector('button[onclick="descargarExcel()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "⏳ PROCESANDO...";
+            btn.style.pointerEvents = "none";
+            btn.style.opacity = "0.7";
+
+            await new Promise(r => setTimeout(r, 50)); 
+
+            try {
+                let data = [["Op. 1er Conteo", "Código", "Ubicación", "Stock", "1er Conteo", "Reconteo Final", "Dif. Final", "Operador Reconteo"]];
+                
+                listaFiltradaReconteo.forEach(reg => {
+                    data.push([
+                        reg.usuario1, 
+                        reg.cod, 
+                        reg.pos, 
+                        reg.teorico, 
+                        reg.fisico1, 
+                        reg.fisico2, 
+                        reg.difFinal, 
+                        reg.usuario
+                    ]);
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Reconteo Auditoria");
+                XLSX.writeFile(wb, "Reporte_Auditoria_Reconteo.xlsx");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.style.pointerEvents = "auto";
+                btn.style.opacity = "1";
+            }
         };
 
         window.borrarTodoReconteo = async () => {

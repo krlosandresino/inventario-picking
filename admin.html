@@ -191,59 +191,78 @@
         };
 
         window.exportarExcelTotal = async () => {
-            const snapInv = await get(dbRefRegistros);
-            const snapInc = await get(dbRefIncidencias);
-            const wb = XLSX.utils.book_new();
+            const btn = document.querySelector('button[onclick="exportarExcelTotal()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "⏳ DESCARGANDO...";
+            btn.style.pointerEvents = "none";
+            btn.style.opacity = "0.7";
             
-            const registros = snapInv.val() || {};
-            const agrupados = {};
-            
-            Object.values(registros).forEach(i => {
-                if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
-                agrupados[i.cod].cant += parseFloat(i.cant || 0);
-                agrupados[i.cod].listaUsuarios.add(i.usuario);
-            });
+            await new Promise(r => setTimeout(r, 50)); 
 
-            const codigosRegistrados = Object.keys(agrupados);
-            
-            const rows = Object.values(agrupados).map(i => ({ 
-                Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
-                Encontrados: i.cant, Diferencia: i.cant - (i.teorico || 0),
-                Operadores: Array.from(i.listaUsuarios).join(', '),
-                Estado: "GESTIONADO"
-            }));
+            try {
+                const snapInv = await get(dbRefRegistros);
+                const snapInc = await get(dbRefIncidencias);
+                const wb = XLSX.utils.book_new();
+                
+                const registros = snapInv.val() || {};
+                const agrupados = {};
+                
+                Object.values(registros).forEach(i => {
+                    if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
+                    agrupados[i.cod].cant += parseFloat(i.cant || 0);
+                    agrupados[i.cod].listaUsuarios.add(i.usuario);
+                });
 
-            dataMaestro.forEach(m => {
-                if (!codigosRegistrados.includes(String(m.cod))) {
-                    rows.push({
-                        Ubicacion: m.pos, Codigo: m.cod, Producto: m.nom, Stock: m.stock,
-                        Encontrados: 0, Diferencia: 0 - (m.stock || 0),
-                        Operadores: "---", Estado: "PENDIENTE"
-                    });
-                }
-            });
-
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "REPORTE GENERAL");
-
-            if(snapInc.val()){
-                const rowsInc = Object.values(snapInc.val()).map(i => ({
-                    Fecha: i.fecha, Operador: i.usuario, Codigo: i.detalles ? i.detalles.cod : '', 
-                    Ubicacion: i.detalles ? i.detalles.pos : '', Cantidad: i.detalles ? i.detalles.cant : ''
+                const codigosRegistrados = Object.keys(agrupados);
+                
+                const rows = Object.values(agrupados).map(i => ({ 
+                    Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
+                    Encontrados: i.cant, Diferencia: i.cant - (i.teorico || 0),
+                    Operadores: Array.from(i.listaUsuarios).join(', '),
+                    Estado: "GESTIONADO"
                 }));
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInc), "FUERA DE STOCK");
+
+                dataMaestro.forEach(m => {
+                    if (!codigosRegistrados.includes(String(m.cod))) {
+                        rows.push({
+                            Ubicacion: m.pos, Codigo: m.cod, Producto: m.nom, Stock: m.stock,
+                            Encontrados: 0, Diferencia: 0 - (m.stock || 0),
+                            Operadores: "---", Estado: "PENDIENTE"
+                        });
+                    }
+                });
+
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "REPORTE GENERAL");
+
+                if(snapInc.val()){
+                    const rowsInc = Object.values(snapInc.val()).map(i => ({
+                        Fecha: i.fecha, Operador: i.usuario, Codigo: i.detalles ? i.detalles.cod : '', 
+                        Ubicacion: i.detalles ? i.detalles.pos : '', Cantidad: i.detalles ? i.detalles.cant : ''
+                    }));
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsInc), "FUERA DE STOCK");
+                }
+                
+                XLSX.writeFile(wb, "REPORTE INVENTARIO PL.xlsx");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.style.pointerEvents = "auto";
+                btn.style.opacity = "1";
             }
-            
-            XLSX.writeFile(wb, "REPORTE INVENTARIO PL.xlsx");
         };
 
         window.subirExcel = (e) => {
             const file = e.target.files[0];
+            const btn = document.querySelector('button[onclick="document.getElementById(\'inputExcel\').click()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "⏳ CARGANDO...";
+            btn.style.pointerEvents = "none";
+            btn.style.opacity = "0.7";
+
             const reader = new FileReader();
             reader.readAsArrayBuffer(file);
             reader.onload = async (event) => {
                 const data = new Uint8Array(event.target.result);
                 const wb = XLSX.read(data, { type: 'array' });
-                // sheet_to_json sin 'header: 1' devuelve un arreglo de objetos con las llaves de la primera fila
                 const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                 
                 const nuevoMaestro = rawRows.map(f => ({ 
@@ -254,6 +273,11 @@
                 })).filter(i => i.cod !== "");
 
                 await set(dbRefMaestro, nuevoMaestro);
+                
+                btn.innerHTML = originalText;
+                btn.style.pointerEvents = "auto";
+                btn.style.opacity = "1";
+                document.getElementById('inputExcel').value = "";
                 alert("Inventario cargado y actualizado");
             };
         };
