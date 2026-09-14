@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📤 Carga Masiva - Muestreo</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, push, get } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        // --- CONEXIÓN A LA BASE DE DATOS PRINCIPAL ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyClp2tVcoeIE_ZOedIzP6zyEXEoP9Em0tM",
+            authDomain: "chatpareja-3fbce.firebaseapp.com",
+            databaseURL: "https://chatpareja-3fbce-default-rtdb.firebaseio.com",
+            projectId: "chatpareja-3fbce",
+            storageBucket: "chatpareja-3fbce.firebasestorage.app",
+            messagingSenderId: "954583350974",
+            appId: "1:954583350974:web:5d082025be24961dd728ef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const dbRefRegistros = ref(db, 'registros');
+        const dbRefMaestro = ref(db, 'maestro');
+
+        window.procesarExcel = async (event) => {
+            const usuarioInput = document.getElementById('usuarioCarga').value.trim();
+            const usuario = usuarioInput ? usuarioInput.toUpperCase() : 'CARGA MASIVA';
+            const file = event.target.files[0];
+            
+            if (!file) return;
+
+            const btnSubir = document.getElementById('btnSubir');
+            const statusBox = document.getElementById('statusMsg');
+            const fileInput = document.getElementById('inputExcelCount');
+
+            btnSubir.disabled = true;
+            btnSubir.style.opacity = '0.7';
+            statusBox.style.display = 'block';
+            statusBox.className = 'status-box status-loading';
+            statusBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Leyendo Excel y conectando con base de datos...';
+
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(file);
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const wb = XLSX.read(data, { type: 'array' });
+                    const sheet = wb.Sheets[wb.SheetNames[0]];
+                    // Leer el excel
+                    const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+                    // Descargar maestro para cruzar datos (nom, pos, teorico)
+                    const snapMaestro = await get(dbRefMaestro);
+                    const maestroData = snapMaestro.val() || [];
+                    
+                    // Crear un diccionario rápido del maestro para buscar por código
+                    const maestroMap = {};
+                    Object.values(maestroData).forEach(item => {
+                        maestroMap[String(item.cod).trim()] = item;
+                    });
+
+                    statusBox.innerHTML = '<i class="fa-solid fa-cloud-arrow-up fa-bounce"></i> Subiendo registros al servidor...';
+
+                    let conteoExito = 0;
+                    let conteoFallo = 0;
+
+                    for (let row of json) {
+                        // Buscar encabezados de forma flexible (mayúsculas o minúsculas)
+                        const rawCod = row["CODIGO"] !== undefined ? row["CODIGO"] : (row["codigo"] !== undefined ? row["codigo"] : row["Codigo"]);
+                        const rawCant = row["CANTIDAD"] !== undefined ? row["CANTIDAD"] : (row["cantidad"] !== undefined ? row["cantidad"] : row["Cantidad"]);
+
+                        if (rawCod !== undefined && rawCant !== undefined && String(rawCod).trim() !== "") {
+                            const codStr = String(rawCod).trim();
+                            const cantNum = parseFloat(rawCant) || 0;
+                            const dataMaestro = maestroMap[codStr];
+
+                            // Llenar datos basándose en el maestro si existe, de lo contrario valores por defecto
+                            const nom = dataMaestro ? dataMaestro.nom.replace(/['"]/g, '') : "Desconocido (Carga Masiva)";
+                            const pos = dataMaestro ? dataMaestro.pos : "---";
+                            const teorico = dataMaestro ? dataMaestro.stock : 0;
+
+                            // Inyectar en Firebase bajo la misma estructura del operario
+                            await push(dbRefRegistros, {
+                                cod: codStr,
+                                nom: nom,
+                                pos: pos,
+                                cant: String(cantNum),
+                                teorico: teorico,
+                                fecha: new Date().toLocaleString(),
+                                usuario: usuario
+                            });
+                            conteoExito++;
+                        } else {
+                            conteoFallo++;
+                        }
+                    }
+
+                    fileInput.value = ""; // Limpiar el input
+                    btnSubir.disabled = false;
+                    btnSubir.style.opacity = '1';
+
+                    statusBox.className = 'status-box status-success';
+                    statusBox.innerHTML = `<i class="fa-solid fa-circle-check"></i> ¡Carga Completada!<br>
+                                          <b>${conteoExito}</b> códigos registrados correctamente.<br>
+                                          <small style="font-weight:normal;">Verifica en el panel Admin Muestreo.</small>`;
+
+                } catch (error) {
+                    btnSubir.disabled = false;
+                    btnSubir.style.opacity = '1';
+                    statusBox.className = 'status-box status-error';
+                    statusBox.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Ocurrió un error al procesar el archivo.`;
+                    console.error(error);
+                }
+            };
+        };
+    </script>
+    <style>
+        :root { --primary: #1a73e8; --bg: #f4f7fe; --success: #2ec4b6; --danger: #e71d36; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; user-select: none; }
+        .card-upload { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.15); width: 400px; text-align: center; }
+        .card-upload i.fa-file-excel { font-size: 4rem; color: #15803d; margin-bottom: 15px; }
+        .card-upload h2 { margin: 0 0 5px 0; color: #333; }
+        .card-upload p { color: #666; font-size: 0.9rem; margin-bottom: 25px; }
+        
+        .input-group { text-align: left; margin-bottom: 15px; }
+        .input-group label { display: block; font-size: 0.85rem; font-weight: bold; color: #555; margin-bottom: 5px; }
+        .input-group input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 1rem; box-sizing: border-box; outline: none; transition: border 0.3s; }
+        .input-group input[type="text"]:focus { border-color: var(--primary); }
+        
+        .btn-upload { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.3s, transform 0.1s; }
+        .btn-upload:active { transform: scale(0.98); }
+        .btn-upload:hover { opacity: 0.9; }
+        
+        .status-box { margin-top: 20px; padding: 15px; border-radius: 10px; font-size: 0.9rem; font-weight: bold; display: none; }
+        .status-loading { background: #eef2ff; color: var(--primary); border: 1px solid #d0d7ff; }
+        .status-success { background: #e6f9f7; color: var(--success); border: 1px solid #c0f0eb; }
+        .status-error { background: #ffe5e5; color: var(--danger); border: 1px solid #ffcccc; }
+        
+        .excel-hint { background: #f8f9fa; padding: 10px; border-radius: 8px; font-size: 0.75rem; color: #555; text-align: left; margin-bottom: 20px; border: 1px dashed #ccc; }
+        .excel-hint span { font-weight: bold; color: #333; }
+    </style>
+</head>
+<body>
+
+<div class="card-upload">
+    <i class="fa-solid fa-file-excel"></i>
+    <h2>Carga Masiva</h2>
+    <p>Sube tu archivo de conteos pre-registrados</p>
+
+    <div class="excel-hint">
+        El archivo Excel <b>debe</b> contener estas dos columnas en la primera fila:<br>
+        1. <span>CODIGO</span><br>
+        2. <span>CANTIDAD</span>
+    </div>
+
+    <div class="input-group">
+        <label for="usuarioCarga"><i class="fa-solid fa-user"></i> Nombre de Operador (Opcional)</label>
+        <input type="text" id="usuarioCarga" placeholder="Ej: CARGA MASIVA" autocomplete="off" oninput="this.value = this.value.toUpperCase()">
+    </div>
+
+    <input type="file" id="inputExcelCount" accept=".xlsx" style="display:none" onchange="procesarExcel(event)">
+    <button class="btn-upload" id="btnSubir" onclick="document.getElementById('inputExcelCount').click()">
+        <i class="fa-solid fa-cloud-arrow-up"></i> Seleccionar Excel y Subir
+    </button>
+
+    <div id="statusMsg" class="status-box"></div>
+</div>
+
+</body>
+</html>
