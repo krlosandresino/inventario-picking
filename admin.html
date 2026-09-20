@@ -27,11 +27,13 @@
         const dbRefMaestro = ref(db, 'maestro');
         const dbRefIncidencias = ref(db, 'incidencias_global');
         const dbRefBateria = ref(db, 'baterias_operarios');
+        const dbRefMensajes = ref(db, 'mensajes');
         const dbRefConfigPendientes = ref(db, 'configuracion/enviarPendientes'); 
 
         let dataMaestro = [];
         let rawRegistrosGlobal = {}; 
         let bateriasGlobal = {}; 
+        let mensajesGlobal = {};
 
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
@@ -90,6 +92,13 @@
             }
         });
 
+        onValue(dbRefMensajes, (snapshot) => {
+            mensajesGlobal = snapshot.val() || {};
+            if(Object.keys(rawRegistrosGlobal).length > 0) {
+                renderMonitorAgrupado();
+            }
+        });
+
         onValue(dbRefIncidencias, (snapshot) => {
             const datos = snapshot.val() || {};
             const lista = Object.keys(datos).map(key => ({ key: key, ...datos[key] })).reverse();
@@ -134,7 +143,23 @@
                         infoBateria = `<span style="font-size:0.75rem; color:${colorTexto}; margin-left:6px; font-weight:normal;">${icono} ${nivel}%</span>`;
                     }
 
-                    return `<span class="user-pill user-filter-btn" onclick="setFiltroUsuario('${u}')" style="cursor:pointer; transition: opacity 0.3s; opacity: ${opacity};" title="Filtrar por ${u}">${u}${infoBateria}</span>`;
+                    // Lógica del ícono de mensaje según estado
+                    let iconMsg = '✉️';
+                    let titleMsg = `Enviar mensaje directo a ${u}`;
+                    if (mensajesGlobal[u]) {
+                        if (mensajesGlobal[u].leido) {
+                            iconMsg = '✅';
+                            titleMsg = `Mensaje Leído. Enviar nuevo a ${u}`;
+                        } else {
+                            iconMsg = '📤';
+                            titleMsg = `Mensaje Entregado (No leído aún). Enviar nuevo a ${u}`;
+                        }
+                    }
+
+                    return `<span class="user-pill user-filter-btn" style="cursor:pointer; transition: opacity 0.3s; opacity: ${opacity}; display:inline-flex; align-items:center; gap:5px;">
+                        <span onclick="setFiltroUsuario('${u}')" title="Filtrar por ${u}">${u}${infoBateria}</span>
+                        <button onclick="abrirModalMensaje('${u}')" style="border:none; background:none; cursor:pointer; font-size:1.1rem; padding:0; line-height:1;" title="${titleMsg}">${iconMsg}</button>
+                    </span>`;
                 }).join('')
                 : '<span style="color:#888; font-size:0.85rem;">Ningún usuario registrado aún</span>';
 
@@ -286,6 +311,7 @@
             if(confirm("¿DESEAS BORRAR TODA LA INFORMACION?")) {
                 await remove(dbRefRegistros);
                 await remove(dbRefIncidencias);
+                await remove(dbRefMensajes);
                 alert("Datos limpiados correctamente.");
             }
         };
@@ -422,7 +448,6 @@
             renderizarSiguientePagina();
         };
 
-        // OPTIMIZACIÓN RENDIMIENTO DOM: Implementación de DocumentFragment
         function renderizarSiguientePagina() {
             const chunk = listaFiltradaGlobal.slice(itemsCargados, itemsCargados + itemsPorPagina);
             if (chunk.length === 0) return;
@@ -459,7 +484,6 @@
             itemsCargados += itemsPorPagina;
         }
 
-        // OPTIMIZACIÓN RENDIMIENTO DOM: Observer para Infinite Scroll
         setTimeout(() => {
             const scrollContainer = document.querySelector('.scroll');
             const sentinel = document.getElementById('sentinelaAdmin');
@@ -596,6 +620,42 @@
             renderListaPendientes();
         };
 
+        window.abrirModalMensaje = (user) => {
+            document.getElementById('msgDestinatario').innerText = user;
+            document.getElementById('msgTexto').value = '';
+            document.getElementById('modalMensajeAdmin').style.display = 'flex';
+            setTimeout(() => document.getElementById('msgTexto').focus(), 100);
+        };
+
+        window.cerrarModalMensaje = () => {
+            document.getElementById('modalMensajeAdmin').style.display = 'none';
+        };
+
+        window.enviarMensaje = async () => {
+            const user = document.getElementById('msgDestinatario').innerText;
+            const texto = document.getElementById('msgTexto').value.trim();
+            
+            if(!texto) { 
+                alert("Por favor escribe un mensaje."); 
+                return; 
+            }
+            
+            const btn = document.querySelector('#modalMensajeAdmin .btn-blue');
+            const originalText = btn.innerText;
+            btn.innerText = "Enviando...";
+            btn.disabled = true;
+
+            await set(ref(db, `mensajes/${user}`), {
+                texto: texto,
+                leido: false,
+                timestamp: new Date().getTime()
+            });
+
+            btn.innerText = originalText;
+            btn.disabled = false;
+            cerrarModalMensaje();
+        };
+
     </script>
     <style>
         :root { --primary: #4361ee; --bg: #f4f7fe; --danger: #e71d36; --success: #2ec4b6; --warning: #f9ab00; }
@@ -702,7 +762,6 @@
                     </thead>
                     <tbody id="bodyMonitor"></tbody>
                 </table>
-                <!-- Elemento centinela para Infinite Scroll optimizado -->
                 <div id="sentinelaAdmin" style="height: 1px;"></div>
             </div>
         </div>
@@ -776,6 +835,18 @@
                 </tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<div id="modalMensajeAdmin" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
+    <div style="background:white; padding:25px; border-radius:15px; width:400px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0; color: var(--primary);">✉️ Enviar Mensaje</h2>
+            <button onclick="cerrarModalMensaje()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
+        </div>
+        <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #555;">Destinatario: <b id="msgDestinatario" style="color:var(--primary);"></b></p>
+        <textarea id="msgTexto" placeholder="Ej: Anda a revisar la ubicación I 09-02C..." style="width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; resize: none; margin-bottom: 15px; box-sizing: border-box; font-family: inherit; font-size: 0.95rem;"></textarea>
+        <button class="btn-blue" style="width: 100%;" onclick="enviarMensaje()">ENVIAR MENSAJE</button>
     </div>
 </div>
 
