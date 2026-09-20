@@ -34,6 +34,7 @@
         let rawRegistrosGlobal = {}; 
         let bateriasGlobal = {}; 
         let mensajesGlobal = {};
+        let usuariosActivosGlobal = []; // Array para guardar usuarios para mensajes globales
 
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
@@ -126,6 +127,8 @@
                 if(reg.usuario) setUsuariosUnicos.add(reg.usuario);
             });
             const arrUsuariosUnicos = Array.from(setUsuariosUnicos);
+            usuariosActivosGlobal = arrUsuariosUnicos; // Actualizamos la lista global para los mensajes
+
             document.getElementById('countUsuarios').innerText = arrUsuariosUnicos.length;
             
             document.getElementById('listaUsuariosRegistrados').innerHTML = arrUsuariosUnicos.length > 0 
@@ -591,14 +594,20 @@
             }
 
             document.getElementById('bodyPendientes').innerHTML = lista.length > 0 
-                ? lista.map(p => `
+                ? lista.map(p => {
+                    // Evitar problemas de comillas al pasar el nombre por JS
+                    const safeNom = p.nom ? p.nom.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
+                    return `
                     <tr>
                         <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:var(--primary); font-weight:bold; user-select: text; cursor: text;" title="Seleccionar código">${p.cod}</td>
                         <td style="padding:12px; border-bottom:1px solid #f0f0f0; font-size:0.85rem; user-select: text; cursor: text;" title="Seleccionar producto">${p.nom || '---'}</td>
                         <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:#555; text-align:center; white-space:nowrap; user-select: text; cursor: text;" title="Seleccionar ubicación"><b>${p.pos || '---'}</b></td>
-                    </tr>
-                `).join('')
-                : '<tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">¡Todo listo! No hay códigos pendientes.</td></tr>';
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; text-align:center;">
+                            <button class="btn-blue" style="padding:4px 8px; font-size:0.85rem;" onclick="abrirModalMision('${p.cod}', '${p.pos || ''}', '${safeNom}')" title="Asignar este código a un operario">🎯</button>
+                        </td>
+                    </tr>`;
+                }).join('')
+                : '<tr><td colspan="4" style="text-align:center; padding:20px; color:#888;">¡Todo listo! No hay códigos pendientes.</td></tr>';
         };
 
         window.ordenarTablaPendientes = (columna) => {
@@ -620,8 +629,18 @@
             renderListaPendientes();
         };
 
+        // -------------- SISTEMA DE MENSAJES Y MISIONES --------------
+
         window.abrirModalMensaje = (user) => {
-            document.getElementById('msgDestinatario').innerText = user;
+            if (user === 'TODOS') {
+                if (usuariosActivosGlobal.length === 0) {
+                    alert("No hay operarios activos para enviar el mensaje global.");
+                    return;
+                }
+                document.getElementById('msgDestinatario').innerText = "TODOS LOS OPERARIOS";
+            } else {
+                document.getElementById('msgDestinatario').innerText = user;
+            }
             document.getElementById('msgTexto').value = '';
             document.getElementById('modalMensajeAdmin').style.display = 'flex';
             setTimeout(() => document.getElementById('msgTexto').focus(), 100);
@@ -645,6 +664,57 @@
             btn.innerText = "Enviando...";
             btn.disabled = true;
 
+            const payload = { texto: texto, leido: false, timestamp: new Date().getTime() };
+
+            if (user === "TODOS LOS OPERARIOS") {
+                // Enviar a todos los usuarios activos
+                const promesas = usuariosActivosGlobal.map(u => set(ref(db, `mensajes/${u}`), payload));
+                await Promise.all(promesas);
+                alert("Mensaje global enviado correctamente a todos.");
+            } else {
+                // Enviar a usuario individual
+                await set(ref(db, `mensajes/${user}`), payload);
+                alert(`Mensaje enviado a ${user} correctamente.`);
+            }
+
+            btn.innerText = originalText;
+            btn.disabled = false;
+            cerrarModalMensaje();
+        };
+
+        // Lógica de Misiones desde Pendientes
+        window.abrirModalMision = (cod, pos, nom) => {
+            document.getElementById('misionCod').innerText = cod;
+            document.getElementById('misionPos').innerText = pos || '---';
+            document.getElementById('misionNom').innerText = nom || '---';
+            
+            const select = document.getElementById('misionOperario');
+            select.innerHTML = usuariosActivosGlobal.length > 0 
+                ? '<option value="">-- Elige un Operario --</option>' + usuariosActivosGlobal.map(u => `<option value="${u}">${u}</option>`).join('')
+                : '<option value="">No hay operarios activos</option>';
+                
+            document.getElementById('modalMisionAdmin').style.display = 'flex';
+        };
+
+        window.cerrarModalMision = () => {
+            document.getElementById('modalMisionAdmin').style.display = 'none';
+        };
+
+        window.enviarMision = async () => {
+            const user = document.getElementById('misionOperario').value;
+            if (!user) { alert("Por favor, selecciona a un operario primero."); return; }
+            
+            const cod = document.getElementById('misionCod').innerText;
+            const pos = document.getElementById('misionPos').innerText;
+            
+            // Texto pre-formateado de la misión
+            const texto = `🎯 MISIÓN: Ve a la ubicación ${pos} y revisa el código ${cod}.`;
+            
+            const btn = document.querySelector('#modalMisionAdmin .btn-success');
+            const originalText = btn.innerText;
+            btn.innerText = "Enviando...";
+            btn.disabled = true;
+
             await set(ref(db, `mensajes/${user}`), {
                 texto: texto,
                 leido: false,
@@ -653,7 +723,8 @@
 
             btn.innerText = originalText;
             btn.disabled = false;
-            cerrarModalMensaje();
+            cerrarModalMision();
+            alert(`Misión asignada a ${user} exitosamente.`);
         };
 
     </script>
@@ -767,12 +838,17 @@
         </div>
         <div class="section">
             
-            <div style="margin-bottom: 20px;">
-                <h3 style="margin-bottom: 10px;">Nombre Operadores</h3>
-                <div id="listaUsuariosRegistrados" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0;">Nombre Operadores</h3>
+                <button class="btn-blue" style="background:#f9ab00; color:#000; padding: 6px 12px; font-size: 0.75rem;" onclick="abrirModalMensaje('TODOS')" title="Enviar mensaje a todos los conectados">
+                    📢 MENSAJE GLOBAL
+                </button>
             </div>
-            <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 20px;">
+            
+            <div id="listaUsuariosRegistrados" style="display: flex; flex-wrap: wrap; gap: 8px;">
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 20px; margin-top: 20px;">
             
             <h3>Alertas Fuera de Stock</h3>
             <div class="scroll">
@@ -810,7 +886,7 @@
 </div>
 
 <div id="modalPendientes" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
-    <div style="background:white; padding:25px; border-radius:15px; width:600px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+    <div style="background:white; padding:25px; border-radius:15px; width:650px; max-width:95%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
             <div style="display:flex; align-items:center; gap: 15px;">
                 <h2 style="margin:0; color: var(--warning);">⏳ Códigos Pendientes</h2>
@@ -829,6 +905,7 @@
                         <th data-col="codigo" onclick="ordenarTablaPendientes('codigo')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Código">Código</th>
                         <th data-col="producto" onclick="ordenarTablaPendientes('producto')" style="border-bottom:2px solid #eee; padding:10px; text-align:left; color:#777; font-size:0.85rem; cursor:pointer; user-select:none;" title="Ordenar por Producto">Producto</th>
                         <th data-col="ubicacion" onclick="ordenarTablaPendientes('ubicacion')" style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem; cursor:pointer; user-select:none; white-space:nowrap; min-width: 100px;" title="Ordenar por Ubicación">Ubicación</th>
+                        <th style="border-bottom:2px solid #eee; padding:10px; text-align:center; color:#777; font-size:0.85rem;">Misión</th>
                     </tr>
                 </thead>
                 <tbody id="bodyPendientes">
@@ -847,6 +924,24 @@
         <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #555;">Destinatario: <b id="msgDestinatario" style="color:var(--primary);"></b></p>
         <textarea id="msgTexto" placeholder="Ej: Anda a revisar la ubicación I 09-02C..." style="width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; resize: none; margin-bottom: 15px; box-sizing: border-box; font-family: inherit; font-size: 0.95rem;"></textarea>
         <button class="btn-blue" style="width: 100%;" onclick="enviarMensaje()">ENVIAR MENSAJE</button>
+    </div>
+</div>
+
+<div id="modalMisionAdmin" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
+    <div style="background:white; padding:25px; border-radius:15px; width:400px; max-width:90%; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0; color: var(--success);">🎯 Asignar Misión</h2>
+            <button onclick="cerrarModalMision()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#888;">&times;</button>
+        </div>
+        <div style="background:#f4f7fe; padding:12px; border-radius:8px; margin-bottom:15px; font-size:0.85rem; color:#555; border: 1px solid #e2e8f0;">
+            <span style="display:block; margin-bottom:4px;"><b>Código:</b> <span id="misionCod" style="color:var(--primary); font-weight:bold; font-size: 1rem;"></span></span>
+            <span style="display:block; margin-bottom:4px;"><b>Ubicación:</b> <span id="misionPos" style="font-weight:bold; color:#e71d36;"></span></span>
+            <span style="display:block;"><b>Producto:</b> <span id="misionNom"></span></span>
+        </div>
+        <p style="margin: 0 0 5px 0; font-size: 0.85rem; color: #555; font-weight:bold;">Seleccionar Operario:</p>
+        <select id="misionOperario" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; font-family: inherit; font-size: 0.95rem; cursor:pointer;">
+        </select>
+        <button class="btn-blue btn-success" style="width: 100%;" onclick="enviarMision()">ENVIAR MISIÓN</button>
     </div>
 </div>
 

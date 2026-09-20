@@ -151,7 +151,6 @@
                         if (usuarioActual !== "ANÓNIMO") {
                             window.iniciarMonitorBateria(usuarioActual);
                             
-                            // Escuchador de Mensajes Directos (Con Historial y Check de Lectura)
                             if(unsubscribeMensajes) unsubscribeMensajes();
                             unsubscribeMensajes = onValue(ref(db, `mensajes/${usuarioActual}`), (snapMsg) => {
                                 const msj = snapMsg.val();
@@ -161,14 +160,14 @@
                                 
                                 if (msj) {
                                     document.getElementById('textoMensajeRecibido').innerText = msj.texto;
-                                    historial.style.display = 'inline-flex'; // Activar píldora de historial
+                                    historial.style.display = 'inline-flex'; 
 
                                     if (!msj.leido) {
-                                        icono.style.display = 'inline-block'; // Mostrar animación
-                                        emitirSonido('error'); // Llamar la atención del operador
+                                        icono.style.display = 'inline-block'; 
+                                        emitirSonido('error'); 
                                         btnCerrar.innerText = "ENTENDIDO";
                                     } else {
-                                        icono.style.display = 'none'; // Ya lo leyó, quitar animación
+                                        icono.style.display = 'none'; 
                                         btnCerrar.innerText = "CERRAR";
                                     }
                                 } else {
