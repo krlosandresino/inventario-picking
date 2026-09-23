@@ -6,7 +6,8 @@
     <title>👤 Operarios</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, push, onValue, remove, get, set } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        // Añadido onDisconnect en la importación
+        import { getDatabase, ref, push, onValue, remove, get, set, onDisconnect } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -148,6 +149,11 @@
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
                         
+                        // REGISTRAR USUARIO ACTIVO Y CONFIGURAR DESCONEXIÓN
+                        const refActivo = ref(db, 'usuarios_activos/' + usuarioActual);
+                        set(refActivo, true);
+                        onDisconnect(refActivo).remove();
+                        
                         if (usuarioActual !== "ANÓNIMO") {
                             window.iniciarMonitorBateria(usuarioActual);
                             
@@ -225,6 +231,11 @@
 
         window.cerrarSesionOp = () => {
             if(confirm("¿Estás seguro de que deseas cerrar sesión?")) {
+                // ELIMINAR SESIÓN ACTIVA MANUALMENTE AL SALIR
+                if (usuarioActual) {
+                    remove(ref(db, 'usuarios_activos/' + usuarioActual));
+                }
+                
                 if(unsubscribeMensajes) { unsubscribeMensajes(); unsubscribeMensajes = null; }
                 document.getElementById('iconoMensaje').style.display = 'none';
                 document.getElementById('historialMensaje').style.display = 'none';

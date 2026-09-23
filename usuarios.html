@@ -20,7 +20,10 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
+        
+        // Referencias a la base de datos
         const dbRefUsuarios = ref(db, 'usuarios_auth');
+        const dbRefActivos = ref(db, 'usuarios_activos'); // Nuevo nodo para sesiones activas
 
         window.crearUsuario = () => {
             const user = document.getElementById('nuevoUsuario').value.trim().toUpperCase();
@@ -51,7 +54,7 @@
                 document.getElementById('chkMuestreo').checked = false;
                 document.getElementById('chkReconteo').checked = false;
                 document.getElementById('chkBuscador').checked = false;
-                document.getElementById('nuevoUsuario').focus(); // Regresa el foco para seguir creando usuarios
+                document.getElementById('nuevoUsuario').focus();
             }).catch(e => alert("Error al crear usuario: " + e));
         };
 
@@ -61,6 +64,53 @@
             }
         };
 
+        // Lógica para cerrar sesión activa de forma individual
+        window.cerrarSesionIndividual = (user) => {
+            if(confirm(`¿Seguro que deseas cerrar la sesión activa del usuario ${user}?`)) {
+                remove(ref(db, 'usuarios_activos/' + user));
+            }
+        };
+
+        // Lógica para cerrar la sesión de todos los usuarios
+        window.cerrarSesionGeneral = () => {
+            if(confirm("⚠️ ¿Estás completamente seguro de cerrar la sesión de TODOS los usuarios activos?")) {
+                remove(ref(db, 'usuarios_activos'));
+            }
+        };
+
+        // Lógica para alternar pestañas
+        window.cambiarTab = (tab) => {
+            const btnReg = document.getElementById('btnRegistrados');
+            const btnAct = document.getElementById('btnActivos');
+            const pnlReg = document.getElementById('panelRegistrados');
+            const pnlAct = document.getElementById('panelActivos');
+
+            if(tab === 'registrados') {
+                btnReg.style.background = 'white';
+                btnReg.style.color = 'var(--primary)';
+                btnReg.style.borderBottomColor = 'var(--primary)';
+                
+                btnAct.style.background = 'transparent';
+                btnAct.style.color = '#666';
+                btnAct.style.borderBottomColor = 'transparent';
+
+                pnlReg.style.display = 'block';
+                pnlAct.style.display = 'none';
+            } else {
+                btnAct.style.background = 'white';
+                btnAct.style.color = '#2e7d32'; // Verde para activos
+                btnAct.style.borderBottomColor = '#2e7d32';
+                
+                btnReg.style.background = 'transparent';
+                btnReg.style.color = '#666';
+                btnReg.style.borderBottomColor = 'transparent';
+
+                pnlAct.style.display = 'block';
+                pnlReg.style.display = 'none';
+            }
+        };
+
+        // Monitoreo de Usuarios Registrados
         onValue(dbRefUsuarios, (snapshot) => {
             const data = snapshot.val();
             const tabla = document.getElementById('cuerpoUsuarios');
@@ -68,12 +118,11 @@
             let total = 0;
             
             if (data) {
-                total = Object.keys(data).length; // Contabilizar los usuarios registrados
+                total = Object.keys(data).length;
                 
                 Object.keys(data).forEach(user => {
                     const info = data[user];
                     
-                    // El operador '?' (optional chaining) asegura que no haya error en usuarios viejos que no tienen el parámetro
                     const accesosText = [
                         info.accesos?.picking ? "Picking" : "",
                         info.accesos?.muestreo ? "Muestreo" : "",
@@ -94,8 +143,32 @@
                 });
             }
             
-            // Actualizar el texto del contador en pantalla
             document.getElementById('totalUsuarios').innerText = `(${total})`;
+        });
+
+        // Monitoreo de Usuarios Activos
+        onValue(dbRefActivos, (snapshot) => {
+            const data = snapshot.val();
+            const tabla = document.getElementById('cuerpoActivos');
+            tabla.innerHTML = "";
+            let total = 0;
+            
+            if (data) {
+                total = Object.keys(data).length;
+                
+                Object.keys(data).forEach(user => {
+                    tabla.innerHTML += `
+                        <tr>
+                            <td style="font-weight:bold; color: #2e7d32;">🟢 ${user}</td>
+                            <td style="text-align:center;">
+                                <button style="border:none; background:none; cursor:pointer; font-size: 1.2rem;" onclick="cerrarSesionIndividual('${user}')" title="Cerrar sesión">🔌</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            document.getElementById('totalActivos').innerText = `(${total})`;
         });
     </script>
     <style>
@@ -104,8 +177,9 @@
         .container { width: 100%; max-width: 500px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 15px; }
         h2 { margin-top: 0; color: #333; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
         input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
-        .checkbox-group { display: flex; gap: 15px; margin: 10px 0; font-size: 0.9rem; font-weight: bold; color: #555; flex-wrap: wrap; } /* flex-wrap añadido para pantallas pequeñas */
-        .btn-main { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .checkbox-group { display: flex; gap: 15px; margin: 10px 0; font-size: 0.9rem; font-weight: bold; color: #555; flex-wrap: wrap; } 
+        .btn-main { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; }
+        .btn-main:hover { opacity: 0.9; }
         table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 10px; }
         th, td { padding: 10px 5px; border-bottom: 1px solid #eee; text-align: left; }
     </style>
@@ -123,6 +197,7 @@
 
 <!-- CONTENIDO DE LA APLICACIÓN (Oculto por defecto) -->
 <div id="mainApp" style="display: none; width: 100%; flex-direction: column; align-items: center;">
+    
     <div class="container">
         <h2>👨‍💻 Crear Nuevo Operador</h2>
         <input type="text" id="nuevoUsuario" placeholder="Nombre de Usuario" autocomplete="off" oninput="this.value = this.value.toUpperCase()">
@@ -139,27 +214,51 @@
         <button class="btn-main" onclick="crearUsuario()">GUARDAR USUARIO</button>
     </div>
 
-    <div class="container">
-        <h2>
-            <span>👥 Usuarios Registrados</span>
-            <span id="totalUsuarios" style="color: var(--primary); font-size: 1.1rem; font-weight: bold;">(0)</span>
-        </h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Usuario</th>
-                    <th>PIN</th>
-                    <th>Accesos</th>
-                    <th>Acción</th>
-                </tr>
-            </thead>
-            <tbody id="cuerpoUsuarios"></tbody>
-        </table>
+    <!-- CONTENEDOR CON PESTAÑAS (REGISTRADOS Y ACTIVOS) -->
+    <div class="container" style="padding: 0; overflow: hidden;">
+        <!-- Cabecera de pestañas -->
+        <div style="display: flex; background: #f0f0f0; border-bottom: 1px solid #ddd;">
+            <button id="btnRegistrados" onclick="cambiarTab('registrados')" style="flex: 1; padding: 15px; border: none; background: white; color: var(--primary); font-weight: bold; cursor: pointer; border-bottom: 3px solid var(--primary); font-size: 1rem; transition: 0.2s;">
+                👥 Registrados <span id="totalUsuarios">(0)</span>
+            </button>
+            <button id="btnActivos" onclick="cambiarTab('activos')" style="flex: 1; padding: 15px; border: none; background: transparent; color: #666; font-weight: bold; cursor: pointer; border-bottom: 3px solid transparent; font-size: 1rem; transition: 0.2s;">
+                🟢 Activos <span id="totalActivos">(0)</span>
+            </button>
+        </div>
+        
+        <!-- Pestaña 1: Usuarios Registrados -->
+        <div id="panelRegistrados" style="padding: 20px;">
+            <table style="margin-top: 0;">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>PIN</th>
+                        <th>Accesos</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoUsuarios"></tbody>
+            </table>
+        </div>
+
+        <!-- Pestaña 2: Usuarios Activos -->
+        <div id="panelActivos" style="display: none; padding: 20px;">
+            <button class="btn-main" style="background: var(--danger); margin-top: 0; margin-bottom: 15px;" onclick="cerrarSesionGeneral()">🚨 Cerrar Sesión de Todos</button>
+            <table style="margin-top: 0;">
+                <thead>
+                    <tr>
+                        <th>Usuario Activo</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoActivos"></tbody>
+            </table>
+        </div>
     </div>
+
 </div>
 
 <script>
-    // Lógica para el sistema de acceso
     function verificarAcceso() {
         const usu = document.getElementById('accesoUsuario').value.trim();
         const pwd = document.getElementById('accesoClave').value.trim();
@@ -172,7 +271,6 @@
         }
     }
 
-    // Permitir "Enter" en la pantalla de login
     document.getElementById('accesoUsuario').addEventListener('keydown', (e) => { 
         if(e.key === 'Enter') { e.preventDefault(); document.getElementById('accesoClave').focus(); }
     });
@@ -180,7 +278,6 @@
         if(e.key === 'Enter') { e.preventDefault(); verificarAcceso(); }
     });
 
-    // Permitir salto con "Enter" del usuario al PIN (lógica original)
     document.getElementById('nuevoUsuario').addEventListener('keydown', (e) => { 
         if(e.key === 'Enter') {
             e.preventDefault();
@@ -188,7 +285,6 @@
         }
     });
     
-    // Permitir guardar al presionar "Enter" estando en el PIN (lógica original)
     document.getElementById('nuevoPin').addEventListener('keydown', (e) => { 
         if(e.key === 'Enter') {
             e.preventDefault();
