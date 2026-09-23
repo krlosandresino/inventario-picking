@@ -154,7 +154,63 @@
             
             document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
             ejecutarFiltro(); 
+            actualizarResumenGeneral(); // Nueva llamada a la estadística general
         }
+
+        // --- NUEVA FUNCIÓN: ACTUALIZAR ESTADÍSTICAS GENERALES DE INVENTARIO ---
+        window.actualizarResumenGeneral = () => {
+            let totalCuadrados = 0;
+            let totalFaltantes = 0;
+            let totalSobrantes = 0;
+            
+            const agrupados = {};
+            Object.values(registrosGlobales).forEach(reg => {
+                if (!agrupados[reg.cod]) {
+                    agrupados[reg.cod] = { teo: parseFloat(reg.teorico || 0), fis: 0 };
+                }
+                agrupados[reg.cod].fis += parseFloat(reg.cant || 0);
+            });
+
+            const codigosRegistrados = new Set(Object.keys(agrupados));
+
+            // Evaluamos lo escaneado
+            Object.values(agrupados).forEach(item => {
+                const dif = item.fis - item.teo;
+                if (dif === 0) totalCuadrados++;
+                else if (dif < 0) totalFaltantes++;
+                else if (dif > 0) totalSobrantes++;
+            });
+
+            // Evaluamos lo NO escaneado (pendiente en maestro)
+            dataMaestro.forEach(m => {
+                if (!codigosRegistrados.has(String(m.cod))) {
+                    const teo = parseFloat(m.stock || 0);
+                    const fis = 0;
+                    const dif = fis - teo;
+                    if (dif === 0) totalCuadrados++; 
+                    else if (dif < 0) totalFaltantes++;
+                    else if (dif > 0) totalSobrantes++;
+                }
+            });
+
+            const totalGeneral = totalCuadrados + totalFaltantes + totalSobrantes;
+            
+            const pctCuad = totalGeneral > 0 ? ((totalCuadrados / totalGeneral) * 100).toFixed(1) : 0;
+            const pctFalt = totalGeneral > 0 ? ((totalFaltantes / totalGeneral) * 100).toFixed(1) : 0;
+            const pctSobr = totalGeneral > 0 ? ((totalSobrantes / totalGeneral) * 100).toFixed(1) : 0;
+
+            const elCuad = document.getElementById('totGenCuadrados');
+            if(elCuad) elCuad.innerText = `${totalCuadrados} (${pctCuad}%)`;
+            
+            const elFalt = document.getElementById('totGenFaltantes');
+            if(elFalt) elFalt.innerText = `${totalFaltantes} (${pctFalt}%)`;
+            
+            const elSobr = document.getElementById('totGenSobrantes');
+            if(elSobr) elSobr.innerText = `${totalSobrantes} (${pctSobr}%)`;
+            
+            const elTotal = document.getElementById('totGenTotal');
+            if(elTotal) elTotal.innerText = `${totalGeneral} (100%)`;
+        };
 
         // --- ACTUALIZACIÓN EN LOTE: SOLICITAR RECONTEO ---
         window.solicitarReconteo = async (codigo) => {
@@ -254,7 +310,6 @@
             reader.onload = async (event) => {
                 const data = new Uint8Array(event.target.result);
                 const wb = XLSX.read(data, { type: 'array' });
-                // Usamos sheet_to_json sin 'header: 1' para obtener los objetos con encabezados reales
                 const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                 
                 const nuevoMaestro = rawRows.map(f => ({ 
@@ -272,7 +327,7 @@
         window.borrarHistorial = async () => {
             if(confirm("¿DESEAS BORRAR TODA LA INFORMACION?")) {
                 await remove(dbRefRegistros);
-                await remove(ref(db, 'auditoria')); // Limpiamos la bandera de auditoría
+                await remove(ref(db, 'auditoria')); 
                 alert("Datos limpiados correctamente.");
             }
         };
@@ -597,6 +652,13 @@
         .mc-cuadrados { background: #e6f9f7; color: var(--success); border: 1px solid #c0f0eb; }
         .mc-faltantes { background: #ffe5e5; color: var(--danger); border: 1px solid #ffcccc; }
         .mc-sobrantes { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
+
+        /* --- ESTILOS NUEVOS PARA LA TARJETA DE RESUMEN GENERAL --- */
+        .summary-card { background: #f4f9ff; border: 1px solid #cce4ff; border-radius: 15px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
+        .summary-card h3 { color: var(--primary); text-align: center; margin: 0 0 12px 0; font-size: 1.1rem; }
+        .summary-divider { border-bottom: 1px solid #cce4ff; margin: 10px 0; }
+        .summary-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; font-size: 0.95rem; font-weight: bold; }
+        .sum-val { color: #333; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -666,14 +728,44 @@
                 </table>
             </div>
         </div>
-        <div class="section">
-            <h3>Usuarios Registrados</h3>
-            <div class="scroll">
-                <table>
-                    <thead><tr><th style="font-size: 0.9rem;">Nombre de Operador</th></tr></thead>
-                    <tbody id="bodyUsuarios"></tbody>
-                </table>
+
+        <!-- ENVOLTORIO PARA LA COLUMNA DERECHA -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            
+            <!-- NUEVA TARJETA: TOTAL GENERAL INVENTARIO (SKU) -->
+            <div class="summary-card">
+                <h3>Total General Inventario (SKU)</h3>
+                <div class="summary-divider"></div>
+                <div class="summary-row">
+                    <span style="color: var(--success);"><i class="fa-solid fa-square-check"></i> Cuadrados:</span>
+                    <span class="sum-val" id="totGenCuadrados">0 (0.0%)</span>
+                </div>
+                <div class="summary-row">
+                    <span style="color: var(--danger);"><i class="fa-solid fa-square-caret-down" style="color: #4361ee;"></i> Faltantes:</span>
+                    <span class="sum-val" id="totGenFaltantes">0 (0.0%)</span>
+                </div>
+                <div class="summary-row">
+                    <span style="color: var(--warning);"><i class="fa-solid fa-square-caret-up" style="color: #4361ee;"></i> Sobrantes:</span>
+                    <span class="sum-val" id="totGenSobrantes">0 (0.0%)</span>
+                </div>
+                <div class="summary-divider"></div>
+                <div class="summary-row" style="margin-top: 10px;">
+                    <span style="color: var(--primary); font-size: 1.05rem;"><span style="font-size: 1.2em; margin-right: 6px; font-family: serif;">&sum;</span> Total SKUs:</span>
+                    <span class="sum-val" id="totGenTotal" style="font-size: 1.05rem;">0 (100%)</span>
+                </div>
             </div>
+
+            <!-- SECCIÓN ORIGINAL USUARIOS REGISTRADOS -->
+            <div class="section" style="margin: 0; flex-grow: 1;">
+                <h3>Usuarios Registrados</h3>
+                <div class="scroll">
+                    <table>
+                        <thead><tr><th style="font-size: 0.9rem;">Nombre de Operador</th></tr></thead>
+                        <tbody id="bodyUsuarios"></tbody>
+                    </table>
+                </div>
+            </div>
+            
         </div>
     </div>
 </div>
