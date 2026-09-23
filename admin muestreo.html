@@ -152,12 +152,27 @@
             });
             listaAgrupadaGlobal = Object.values(agrupados).reverse();
             
-            document.getElementById('pendientes').innerText = (dataMaestro.length - Object.keys(agrupados).length);
+            const gestionados = Object.keys(agrupados).length;
+            const totalItems = dataMaestro.length;
+            
+            document.getElementById('pendientes').innerText = (totalItems - gestionados);
+            
+            // --- NUEVO: CÁLCULO DE LA BARRA DE PROGRESO ---
+            let porcentaje = 0;
+            if (totalItems > 0) {
+                porcentaje = Math.min(((gestionados / totalItems) * 100), 100).toFixed(1);
+            }
+            const elFill = document.getElementById('progressFill');
+            const elText = document.getElementById('progressText');
+            if(elFill && elText) {
+                elFill.style.width = `${porcentaje}%`;
+                elText.innerText = `${porcentaje}% (${gestionados} / ${totalItems} SKUs)`;
+            }
+
             ejecutarFiltro(); 
-            actualizarResumenGeneral(); // Nueva llamada a la estadística general
+            actualizarResumenGeneral();
         }
 
-        // --- NUEVA FUNCIÓN: ACTUALIZAR ESTADÍSTICAS GENERALES DE INVENTARIO ---
         window.actualizarResumenGeneral = () => {
             let totalCuadrados = 0;
             let totalFaltantes = 0;
@@ -173,7 +188,6 @@
 
             const codigosRegistrados = new Set(Object.keys(agrupados));
 
-            // Evaluamos lo escaneado
             Object.values(agrupados).forEach(item => {
                 const dif = item.fis - item.teo;
                 if (dif === 0) totalCuadrados++;
@@ -181,7 +195,6 @@
                 else if (dif > 0) totalSobrantes++;
             });
 
-            // Evaluamos lo NO escaneado (pendiente en maestro)
             dataMaestro.forEach(m => {
                 if (!codigosRegistrados.has(String(m.cod))) {
                     const teo = parseFloat(m.stock || 0);
@@ -212,7 +225,6 @@
             if(elTotal) elTotal.innerText = `${totalGeneral} (100%)`;
         };
 
-        // --- ACTUALIZACIÓN EN LOTE: SOLICITAR RECONTEO ---
         window.solicitarReconteo = async (codigo) => {
             if(confirm(`¿Deseas enviar a RECONTAR el código ${codigo}?`)) {
                 const snap = await get(dbRefRegistros);
@@ -232,7 +244,6 @@
             }
         };
 
-        // --- ACTUALIZACIÓN EN LOTE: ELIMINAR REGISTROS ---
         window.eliminarRegistroIndividual = async (codigo) => {
             if(confirm(`¿Deseas eliminar los registros del código ${codigo} para que lo vuelvan a ingresar?`)) {
                 const snap = await get(dbRefRegistros);
@@ -653,12 +664,19 @@
         .mc-faltantes { background: #ffe5e5; color: var(--danger); border: 1px solid #ffcccc; }
         .mc-sobrantes { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
 
-        /* --- ESTILOS NUEVOS PARA LA TARJETA DE RESUMEN GENERAL --- */
         .summary-card { background: #f4f9ff; border: 1px solid #cce4ff; border-radius: 15px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
         .summary-card h3 { color: var(--primary); text-align: center; margin: 0 0 12px 0; font-size: 1.1rem; }
         .summary-divider { border-bottom: 1px solid #cce4ff; margin: 10px 0; }
         .summary-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; font-size: 0.95rem; font-weight: bold; }
         .sum-val { color: #333; font-weight: bold; }
+
+        /* --- ESTILOS DE LA BARRA DE PROGRESO --- */
+        .progress-card { background: white; padding: 15px 25px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: bold; color: #555; font-size: 1rem; }
+        .progress-track { width: 100%; background-color: #eef2ff; border-radius: 10px; height: 12px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), #6366f1); width: 0%; border-radius: 10px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); position: relative; }
+        .progress-fill::after { content: ""; position: absolute; top: 0; left: 0; bottom: 0; right: 0; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%); animation: shimmer 2s infinite; }
+        @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
     </style>
 </head>
 <body>
@@ -674,7 +692,7 @@
 </div>
 
 <div id="adminMain" style="display:none;">
-    <div class="header">
+    <div class="header" style="margin-bottom: 20px;">
         <h1 style="margin:0;">🛠️ Gestión Inventario Muestreo</h1>
         <div style="display:flex; gap:10px;">
             <button class="btn-blue btn-purple" onclick="abrirModalEstadisticas()">📊 VER PRODUCTIVIDAD</button>
@@ -685,8 +703,19 @@
         </div>
     </div>
 
+    <!-- NUEVA SECCIÓN: BARRA DE PROGRESO -->
+    <div class="progress-card">
+        <div class="progress-header">
+            <span><i class="fa-solid fa-bars-progress" style="color: var(--primary); margin-right: 8px;"></i>Avance de Toma Física</span>
+            <span id="progressText" style="color: var(--primary);">0% (0 / 0 SKUs)</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+    </div>
+
     <div class="stats-grid">
-        <div class="stat-card"><span>SKU</span><h2 id="totalMaestro">0</h2></div>
+        <div class="stat-card"><span>SKU TOTALES</span><h2 id="totalMaestro">0</h2></div>
         
         <div class="stat-card" style="border-color: var(--warning); cursor: pointer;" onclick="abrirModalPendientes()" title="Ver lista de códigos pendientes">
             <span>PENDIENTES</span><h2 id="pendientes">0</h2>
@@ -729,10 +758,7 @@
             </div>
         </div>
 
-        <!-- ENVOLTORIO PARA LA COLUMNA DERECHA -->
         <div style="display: flex; flex-direction: column; gap: 20px;">
-            
-            <!-- NUEVA TARJETA: TOTAL GENERAL INVENTARIO (SKU) -->
             <div class="summary-card">
                 <h3>Total General Inventario (SKU)</h3>
                 <div class="summary-divider"></div>
@@ -755,7 +781,6 @@
                 </div>
             </div>
 
-            <!-- SECCIÓN ORIGINAL USUARIOS REGISTRADOS -->
             <div class="section" style="margin: 0; flex-grow: 1;">
                 <h3>Usuarios Registrados</h3>
                 <div class="scroll">
