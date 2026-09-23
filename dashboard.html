@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📺 Dashboard TV - Inventario en Vivo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+            authDomain: "inventariopicking.firebaseapp.com",
+            databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+            projectId: "inventariopicking",
+            storageBucket: "inventariopicking.firebasestorage.app",
+            messagingSenderId: "92946062722",
+            appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        
+        const dbRefMaestro = ref(db, 'maestro');
+        const dbRefRegistros = ref(db, 'registros');
+        const dbRefReconteo = ref(db, 'registros_reconteo');
+
+        // Variables de datos crudos
+        let rawDataMaestro = {};
+        let rawDataRegistros = {};
+        let rawDataReconteo = {};
+        
+        let totalMaestro = 0;
+        
+        // --- SISTEMA DE OPTIMIZACIÓN (DEBOUNCE Y MODO SUSPENSIÓN) ---
+        let needsRender = false; 
+        let lastActivityTime = Date.now();
+        const IDLE_LIMIT = 5 * 60 * 1000; // 5 minutos en milisegundos
+        let isIdle = false;
+
+        function registrarActividad() {
+            lastActivityTime = Date.now();
+            needsRender = true;
+            if (isIdle) {
+                isIdle = false;
+                document.body.classList.remove('idle-active');
+            }
+        }
+
+        // Bucle de Control (Renderizado y Reloj)
+        setInterval(() => {
+            const now = Date.now();
+            
+            // 1. Actualizar Relojes
+            const timeString = new Date().toLocaleTimeString('es-EC', { hour12: true });
+            document.getElementById('reloj').innerText = timeString;
+            document.getElementById('reloj-idle').innerText = timeString;
+
+            // 2. Control del Modo Suspensión
+            if (!isIdle && (now - lastActivityTime > IDLE_LIMIT)) {
+                isIdle = true;
+                document.body.classList.add('idle-active');
+            }
+
+            // 3. Acelerador de Renderizado (Debounce) - Solo dibuja 1 vez por segundo si hubo cambios
+            if (needsRender && !isIdle) {
+                renderizarDashboard();
+                needsRender = false;
+            }
+        }, 1000); 
+
+        // Listeners de Firebase
+        onValue(dbRefMaestro, snap => {
+            rawDataMaestro = snap.val() || [];
+            registrarActividad();
+        });
+
+        onValue(dbRefRegistros, snap => {
+            rawDataRegistros = snap.val() || {};
+            registrarActividad();
+        });
+
+        onValue(dbRefReconteo, snap => {
+            rawDataReconteo = snap.val() || {};
+            registrarActividad();
+        });
+
+        // Función Principal Unificada de Renderizado
+        function renderizarDashboard() {
+            // Cargar Maestro
+            let dataMaestro = {};
+            rawDataMaestro.forEach(i => { if(i.cod) dataMaestro[i.cod] = i; });
+            totalMaestro = Object.keys(dataMaestro).length;
+            document.getElementById('kpi-total').innerText = totalMaestro;
+
+            // Variables de cálculo
+            let agrupados = {};
+            let statsOperadores = {};
+            let ultimosRegistros = [];
+            let statsZonas = {};
+
+            // Inicializar Zonas
+            for (let cod in dataMaestro) {
+                let pos = dataMaestro[cod].pos || '';
+                let zona = pos.trim().charAt(0).toUpperCase(); 
+                if (!zona.match(/[A-Z0-9]/)) zona = 'OTRO';
+                
+                if (!statsZonas[zona]) statsZonas[zona] = { total: 0, procesados: 0 };
+                statsZonas[zona].total++;
+            }
+
+            // Procesar 1er Conteo
+            for (let key in rawDataRegistros) {
+                let reg = rawDataRegistros[key];
+                ultimosRegistros.push(reg);
+
+                if (!agrupados[reg.cod]) {
+                    agrupados[reg.cod] = { cant: 0, usuarios: new Set() };
+                }
+                agrupados[reg.cod].cant += parseFloat(reg.cant || 0);
+                if (reg.usuario) agrupados[reg.cod].usuarios.add(reg.usuario);
+            }
+
+            let skusProcesados = 0;
+            let cuadrados = 0;
+
+            for (let cod in agrupados) {
+                skusProcesados++;
+                let maestroItem = dataMaestro[cod] || { stock: 0, pos: '' };
+                let teorico = parseFloat(maestroItem.stock || 0);
+                let fisico = agrupados[cod].cant;
+                
+                let dif = fisico - teorico;
+                if (dif === 0) cuadrados++;
+
+                agrupados[cod].usuarios.forEach(user => {
+                    if (!statsOperadores[user]) statsOperadores[user] = 0;
+                    statsOperadores[user]++;
+                });
+
+                let pos = maestroItem.pos || '';
+                let zona = pos.trim().charAt(0).toUpperCase();
+                if (!zona.match(/[A-Z0-9]/)) zona = 'OTRO';
+                if (statsZonas[zona]) {
+                    statsZonas[zona].procesados++;
+                }
+            }
+
+            // KPIs Principales
+            document.getElementById('kpi-procesados').innerText = skusProcesados;
+            let pendientes = totalMaestro - skusProcesados;
+            document.getElementById('kpi-pendientes').innerText = pendientes > 0 ? pendientes : 0;
+
+            let pctAvance = totalMaestro > 0 ? ((skusProcesados / totalMaestro) * 100).toFixed(1) : 0;
+            document.getElementById('progreso-texto').innerText = `${pctAvance}%`;
+            document.getElementById('barra-progreso').style.width = `${pctAvance}%`;
+
+            let eri = skusProcesados > 0 ? ((cuadrados / skusProcesados) * 100).toFixed(1) : 0;
+            const kpiEri = document.getElementById('kpi-eri');
+            kpiEri.innerText = `${eri}%`;
+            if(eri >= 95) kpiEri.style.color = 'var(--success)';
+            else if(eri >= 85) kpiEri.style.color = 'var(--warning)';
+            else kpiEri.style.color = 'var(--danger)';
+
+            // Zonas
+            let mejorZona = { nombre: '', pct: -1 };
+            const zonasHtml = Object.keys(statsZonas).sort().map(z => {
+                let sz = statsZonas[z];
+                if(sz.total === 0) return ''; 
+                let pct = Math.round((sz.procesados / sz.total) * 100);
+                
+                if (pct > mejorZona.pct && pct < 100) mejorZona = { nombre: z, pct: pct };
+                else if (pct === 100 && mejorZona.pct === -1) mejorZona = { nombre: z, pct: pct };
+
+                let colorZona = pct === 100 ? 'var(--success)' : 'var(--primary)';
+                return `
+                    <div class="zona-card">
+                        <div class="zona-header">
+                            <span style="font-weight: bold; color: var(--text-main);">Zona ${z}</span>
+                            <span style="color: ${colorZona}; font-weight: bold;">${pct}% <small style="color:var(--text-muted); font-weight:normal;">(${sz.procesados}/${sz.total})</small></span>
+                        </div>
+                        <div class="progress-track" style="height: 8px;">
+                            <div class="progress-fill" style="width: ${pct}%; background: ${colorZona};"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('zonas-vivo').innerHTML = zonasHtml || '<div style="color:#aaa; text-align:center;">Esperando datos de ubicaciones...</div>';
+
+            // Top Operadores
+            const topOps = Object.entries(statsOperadores).sort((a, b) => b[1] - a[1]);
+            document.getElementById('lista-operadores').innerHTML = topOps.length > 0 
+                ? topOps.map((op, index) => `
+                    <div class="op-card">
+                        <div class="op-rank">#${index + 1}</div>
+                        <div class="op-name"><i class="fa-solid fa-user-ninja"></i> ${op[0]}</div>
+                        <div class="op-score">${op[1]} <span style="font-size:1rem; color:#aaa">SKUs</span></div>
+                    </div>
+                `).join('')
+                : '<div style="color:#aaa; text-align:center;">Esperando datos...</div>';
+
+            // Feed 1er Conteo
+            const feed = ultimosRegistros.reverse().slice(0, 20);
+            document.getElementById('feed-vivo').innerHTML = feed.length > 0
+                ? feed.map(f => `
+                    <div class="feed-item fade-in">
+                        <div>
+                            <span class="feed-user">${f.usuario}</span>
+                            <br><span class="feed-cod">${f.cod}</span>
+                        </div>
+                        <div class="feed-qty">+${f.cant}</div>
+                    </div>
+                `).join('')
+                : '<div style="color:#aaa; text-align:center;">Sin actividad reciente...</div>';
+                
+            // Reconteo Auditoría
+            const ultimosReconteos = Object.values(rawDataReconteo).reverse().slice(0, 20);
+            document.getElementById('reconteo-vivo').innerHTML = ultimosReconteos.length > 0
+                ? ultimosReconteos.map(r => `
+                    <div class="reconteo-item fade-in">
+                        <div>
+                            <span style="color:var(--purple); font-weight:bold;">${r.usuario}</span>
+                            <br><span class="feed-cod">${r.cod}</span>
+                        </div>
+                        <div class="feed-qty" style="color:var(--text-main); font-size:1.2rem;">R: ${r.cant}</div>
+                    </div>
+                `).join('')
+                : '<div style="color:#aaa; text-align:center; margin-top:20px;">Auditoría en espera...</div>';
+
+            // Marquesina (News Ticker)
+            let noticias = [];
+            if (topOps.length > 0) noticias.push(`🏆 MVP ACTUAL: ¡${topOps[0][0]} lidera la operación con ${topOps[0][1]} SKUs procesados!`);
+            if (pendientes > 0) noticias.push(`📦 META EN LA MIRA: Faltan solo ${pendientes} códigos para cerrar el primer conteo general.`);
+            else if (pendientes <= 0 && totalMaestro > 0) noticias.push(`✅ ¡PRIMER CONTEO FINALIZADO! Todos los códigos del maestro han sido escaneados.`);
+            if (mejorZona.nombre !== '') noticias.push(`📍 ZONA CALIENTE: El Pasillo/Zona ${mejorZona.nombre} va punteando con un ${mejorZona.pct}% de avance.`);
+            if (skusProcesados > 0) noticias.push(`🎯 PRECISIÓN DE EQUIPO: Nuestra exactitud actual es del ${eri}%.`);
+            
+            const textoMarquesina = noticias.join(' &nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp; ');
+            const tickerEl = document.getElementById('ticker-content');
+            if (textoMarquesina && tickerEl.innerHTML !== textoMarquesina) {
+                tickerEl.innerHTML = textoMarquesina;
+                tickerEl.style.animation = 'none';
+                tickerEl.offsetHeight; 
+                tickerEl.style.animation = 'tickerAnim 35s linear infinite';
+            }
+        }
+
+        // --- SISTEMA DE AUTO-SCROLL INTELIGENTE ---
+        function iniciarAutoScroll(elementId, velocidad) {
+            const el = document.getElementById(elementId);
+            if(!el) return;
+            
+            let isHovered = false;
+            let timeoutReset;
+
+            el.addEventListener('mouseenter', () => isHovered = true);
+            el.addEventListener('mouseleave', () => isHovered = false);
+            el.addEventListener('touchstart', () => isHovered = true);
+            el.addEventListener('touchend', () => { setTimeout(() => isHovered = false, 1000); });
+
+            setInterval(() => {
+                if (!isHovered && el.scrollHeight > el.clientHeight && !isIdle) {
+                    el.scrollTop += velocidad;
+                    
+                    if (Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight) {
+                        isHovered = true; 
+                        clearTimeout(timeoutReset);
+                        timeoutReset = setTimeout(() => {
+                            el.scrollTo({ top: 0, behavior: 'smooth' });
+                            setTimeout(() => isHovered = false, 1000);
+                        }, 2000);
+                    }
+                }
+            }, 40); 
+        }
+
+        setTimeout(() => {
+            iniciarAutoScroll('zonas-vivo', 0.5);
+            iniciarAutoScroll('lista-operadores', 0.5);
+            iniciarAutoScroll('feed-vivo', 0.8); 
+            iniciarAutoScroll('reconteo-vivo', 0.8);
+        }, 2000);
+
+    </script>
+
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-bg: #1e293b;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --purple: #a855f7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            transition: background-color 1.5s ease;
+        }
+
+        /* --- CLASES DE MODO SUSPENSIÓN (IDLE MODE) --- */
+        body.idle-active {
+            background-color: #000000;
+        }
+
+        .dashboard-wrapper {
+            padding: 20px 20px 70px 20px; 
+            transition: opacity 1.5s ease, filter 1.5s ease;
+        }
+
+        body.idle-active .dashboard-wrapper {
+            opacity: 0.15;
+            filter: blur(8px) grayscale(50%);
+            pointer-events: none;
+        }
+
+        .idle-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.5s ease;
+            z-index: 2000;
+        }
+
+        body.idle-active .idle-overlay {
+            opacity: 1;
+        }
+        /* --------------------------------------------- */
+
+        /* HEADER */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 2rem; color: var(--primary); text-transform: uppercase; letter-spacing: 2px; display: flex; align-items: center; gap: 15px; }
+        .reloj { font-size: 2.2rem; font-weight: 800; color: var(--warning); font-variant-numeric: tabular-nums; }
+
+        /* PROGRESS BAR */
+        .progress-container { background: var(--panel-bg); border-radius: 12px; padding: 15px 20px; margin-bottom: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .progress-header { display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: bold; margin-bottom: 8px; color: var(--text-muted); }
+        .progress-track { height: 25px; background: #334155; border-radius: 20px; overflow: hidden; position: relative; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), #8b5cf6); width: 0%; transition: width 1s ease-in-out; }
+
+        /* KPIS */
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .kpi-card { background: var(--panel-bg); border-radius: 12px; padding: 20px 15px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border-top: 4px solid var(--text-muted); }
+        .kpi-card.blue { border-color: var(--primary); }
+        .kpi-card.green { border-color: var(--success); }
+        .kpi-card.yellow { border-color: var(--warning); }
+        .kpi-card.purple { border-color: #8b5cf6; }
+        .kpi-title { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; font-weight: bold; letter-spacing: 1px; }
+        .kpi-value { font-size: 3rem; font-weight: 800; margin-top: 5px; line-height: 1; }
+
+        /* MAIN DASHBOARD CONTENT */
+        .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; height: calc(100vh - 310px); min-height: 400px; }
+        .panel { background: var(--panel-bg); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; box-shadow: 0 5px 15px rgba(0,0,0,0.3); overflow: hidden; }
+        .panel-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 15px; color: var(--primary); border-bottom: 2px solid #334155; padding-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .scroll-container { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 5px; scrollbar-width: none; }
+        .scroll-container::-webkit-scrollbar { display: none; }
+
+        /* ZONAS & OPERADORES */
+        .zona-card { background: #33415550; padding: 10px; border-radius: 8px; border-left: 3px solid #64748b; }
+        .zona-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.95rem; }
+        .op-card { display: flex; align-items: center; background: #2dd4bf15; border: 1px solid #2dd4bf40; padding: 10px 12px; border-radius: 8px; }
+        .op-rank { font-size: 1.2rem; font-weight: 900; color: #2dd4bf; width: 35px; }
+        .op-name { flex-grow: 1; font-size: 1.1rem; font-weight: bold; }
+        .op-score { font-size: 1.4rem; font-weight: 800; color: var(--success); }
+
+        /* FEEDS */
+        .feed-item { background: #3b82f615; border-left: 4px solid var(--primary); padding: 10px 12px; border-radius: 0 8px 8px 0; display: flex; justify-content: space-between; align-items: center; font-size: 1rem; }
+        .reconteo-item { background: #a855f715; border-left: 4px solid var(--purple); padding: 10px 12px; border-radius: 0 8px 8px 0; display: flex; justify-content: space-between; align-items: center; font-size: 1rem; }
+        .feed-user { color: var(--warning); font-weight: bold; }
+        .feed-cod { font-family: monospace; font-size: 1.1rem; background: #00000050; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;}
+        .feed-qty { font-size: 1.4rem; font-weight: 900; color: var(--success); }
+
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* MARQUESINA */
+        .ticker-wrap { position: fixed; bottom: 0; left: 0; width: 100%; height: 45px; background: #1e293b; border-top: 3px solid var(--primary); overflow: hidden; display: flex; align-items: center; z-index: 1000; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); }
+        .ticker-title { background: var(--primary); color: white; font-weight: 800; padding: 0 20px; height: 100%; display: flex; align-items: center; position: relative; z-index: 1001; text-transform: uppercase; letter-spacing: 1px; box-shadow: 5px 0 15px rgba(0,0,0,0.3); }
+        .ticker-news { width: 100%; height: 100%; overflow: hidden; position: relative; display: flex; align-items: center; }
+        .ticker-content { white-space: nowrap; padding-left: 100%; font-size: 1.2rem; color: #f8fafc; font-weight: 600; animation: tickerAnim 35s linear infinite; }
+        @keyframes tickerAnim { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+
+        /* RESPONSIVE DESIGN */
+        @media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-grid { grid-template-columns: repeat(2, 1fr); height: auto; } .panel { height: 400px; } }
+        @media (max-width: 768px) { body { padding-bottom: 0; } .dashboard-wrapper { padding-bottom: 90px; } .header { flex-direction: column; text-align: center; gap: 10px; } .header h1 { font-size: 1.5rem; justify-content: center; } .kpi-grid { grid-template-columns: repeat(2, 1fr); } .kpi-value { font-size: 2rem; } .dashboard-grid { grid-template-columns: 1fr; } .ticker-wrap { flex-direction: column; height: auto; } .ticker-title { width: 100%; justify-content: center; padding: 5px 0; } .ticker-news { height: 35px; } }
+        @media (max-width: 480px) { .kpi-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+    <!-- OVERLAY DEL MODO SUSPENSIÓN -->
+    <div class="idle-overlay">
+        <i class="fa-solid fa-mug-hot fa-bounce" style="font-size: 4rem; color: var(--warning); margin-bottom: 20px; animation-duration: 3s;"></i>
+        <div style="font-size: 2rem; font-weight: bold; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 2px;">MODO SUSPENSIÓN</div>
+        <div style="font-size: 1.2rem; color: #64748b;">Pantalla en ahorro de energía. Esperando nuevas lecturas...</div>
+        <div class="reloj" id="reloj-idle" style="font-size: 6rem; margin-top: 40px; color: var(--primary);">00:00:00</div>
+    </div>
+
+    <!-- CONTENEDOR PRINCIPAL QUE SE DIFUMINA AL ESTAR INACTIVO -->
+    <div class="dashboard-wrapper">
+        <div class="header">
+            <h1><i class="fa-solid fa-satellite-dish fa-beat" style="color: #ef4444;"></i> MONITOREO EN VIVO</h1>
+            <div class="reloj" id="reloj">00:00:00</div>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-header">
+                <span>PROGRESO DEL INVENTARIO GENERAL</span>
+                <span id="progreso-texto" style="color: var(--text-main); font-size: 1.2rem;">0%</span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" id="barra-progreso"></div>
+            </div>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card blue">
+                <div class="kpi-title">Total SKUs (Maestro)</div>
+                <div class="kpi-value" id="kpi-total">0</div>
+            </div>
+            <div class="kpi-card green">
+                <div class="kpi-title">SKUs Contados</div>
+                <div class="kpi-value" id="kpi-procesados">0</div>
+            </div>
+            <div class="kpi-card yellow">
+                <div class="kpi-title">SKUs Pendientes</div>
+                <div class="kpi-value" id="kpi-pendientes">0</div>
+            </div>
+            <div class="kpi-card purple">
+                <div class="kpi-title">Precisión (ERI)</div>
+                <div class="kpi-value" id="kpi-eri">0%</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            
+            <div class="panel">
+                <div class="panel-title">
+                    <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> AVANCE POR ZONAS
+                </div>
+                <div class="scroll-container" id="zonas-vivo"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">
+                    <i class="fa-solid fa-trophy" style="color: #fbbf24;"></i> TOP OPERADORES
+                </div>
+                <div class="scroll-container" id="lista-operadores"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">
+                    <i class="fa-solid fa-bolt" style="color: #3b82f6;"></i> 1ER CONTEO EN VIVO
+                </div>
+                <div class="scroll-container" id="feed-vivo"></div>
+            </div>
+
+            <div class="panel" style="border: 1px solid #a855f750;">
+                <div class="panel-title" style="color: var(--purple); border-bottom-color: var(--purple);">
+                    <i class="fa-solid fa-magnifying-glass-chart"></i> AUDITORÍA EN VIVO
+                </div>
+                <div class="scroll-container" id="reconteo-vivo"></div>
+            </div>
+
+        </div>
+    </div> <!-- FIN DASHBOARD WRAPPER -->
+
+    <!-- MARQUESINA TIPO NOTICIERO (NEWS TICKER) -->
+    <div class="ticker-wrap">
+        <div class="ticker-title">
+            <i class="fa-solid fa-tower-broadcast fa-fade" style="margin-right: 8px;"></i> ALERTAS
+        </div>
+        <div class="ticker-news">
+            <div class="ticker-content" id="ticker-content">
+                Cargando métricas de operación...
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
