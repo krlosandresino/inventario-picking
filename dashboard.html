@@ -9,7 +9,8 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        // Cambio clave 1: Importamos onChildAdded y onChildChanged en lugar de onValue
+        import { getDatabase, ref, onChildAdded, onChildChanged } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -28,7 +29,7 @@
         const dbRefRegistros = ref(db, 'registros');
         const dbRefReconteo = ref(db, 'registros_reconteo');
 
-        // Variables de datos crudos
+        // Variables de datos crudos (Ahora almacenan datos incrementalmente)
         let rawDataMaestro = {};
         let rawDataRegistros = {};
         let rawDataReconteo = {};
@@ -72,27 +73,39 @@
             }
         }, 1000); 
 
-        // Listeners de Firebase
-        onValue(dbRefMaestro, snap => {
-            rawDataMaestro = snap.val() || [];
+        // Listeners de Firebase optimizados para red y memoria
+        onChildAdded(dbRefMaestro, snap => {
+            rawDataMaestro[snap.key] = snap.val();
+            registrarActividad();
+        });
+        onChildChanged(dbRefMaestro, snap => {
+            rawDataMaestro[snap.key] = snap.val();
             registrarActividad();
         });
 
-        onValue(dbRefRegistros, snap => {
-            rawDataRegistros = snap.val() || {};
+        onChildAdded(dbRefRegistros, snap => {
+            rawDataRegistros[snap.key] = snap.val();
+            registrarActividad();
+        });
+        onChildChanged(dbRefRegistros, snap => {
+            rawDataRegistros[snap.key] = snap.val();
             registrarActividad();
         });
 
-        onValue(dbRefReconteo, snap => {
-            rawDataReconteo = snap.val() || {};
+        onChildAdded(dbRefReconteo, snap => {
+            rawDataReconteo[snap.key] = snap.val();
+            registrarActividad();
+        });
+        onChildChanged(dbRefReconteo, snap => {
+            rawDataReconteo[snap.key] = snap.val();
             registrarActividad();
         });
 
         // Función Principal Unificada de Renderizado
         function renderizarDashboard() {
-            // Cargar Maestro
+            // Cargar Maestro iterando sobre el objeto incremental
             let dataMaestro = {};
-            rawDataMaestro.forEach(i => { if(i.cod) dataMaestro[i.cod] = i; });
+            Object.values(rawDataMaestro).forEach(i => { if(i && i.cod) dataMaestro[i.cod] = i; });
             totalMaestro = Object.keys(dataMaestro).length;
             document.getElementById('kpi-total').innerText = totalMaestro;
 
@@ -248,7 +261,7 @@
             }
         }
 
-        // --- SISTEMA DE AUTO-SCROLL INTELIGENTE ---
+        // --- SISTEMA DE AUTO-SCROLL INTELIGENTE (Optimizado con requestAnimationFrame) ---
         function iniciarAutoScroll(elementId, velocidad) {
             const el = document.getElementById(elementId);
             if(!el) return;
@@ -258,10 +271,10 @@
 
             el.addEventListener('mouseenter', () => isHovered = true);
             el.addEventListener('mouseleave', () => isHovered = false);
-            el.addEventListener('touchstart', () => isHovered = true);
-            el.addEventListener('touchend', () => { setTimeout(() => isHovered = false, 1000); });
+            el.addEventListener('touchstart', () => isHovered = true, { passive: true });
+            el.addEventListener('touchend', () => { setTimeout(() => isHovered = false, 1000); }, { passive: true });
 
-            setInterval(() => {
+            function scrollStep() {
                 if (!isHovered && el.scrollHeight > el.clientHeight && !isIdle) {
                     el.scrollTop += velocidad;
                     
@@ -274,7 +287,10 @@
                         }, 2000);
                     }
                 }
-            }, 40); 
+                requestAnimationFrame(scrollStep);
+            }
+            
+            requestAnimationFrame(scrollStep);
         }
 
         setTimeout(() => {
