@@ -6,7 +6,6 @@
     <title>👤 Operarios</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        // Añadido onDisconnect en la importación
         import { getDatabase, ref, push, onValue, remove, get, set, onDisconnect } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
@@ -24,6 +23,15 @@
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
         const dbRefIncidencias = ref(db, 'incidencias_global');
+
+        // Escuchador de estado para pantalla de bloqueo
+        onValue(ref(db, 'estado_sistema/cargando'), (snapshot) => {
+            const cargando = snapshot.val();
+            const overlay = document.getElementById('overlayCargandoInventario');
+            if (overlay) {
+                overlay.style.display = cargando ? 'flex' : 'none';
+            }
+        });
 
         let inventarioMaestro = [];
         let usuarioActual = "";
@@ -149,7 +157,6 @@
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
                         
-                        // REGISTRAR USUARIO ACTIVO Y CONFIGURAR DESCONEXIÓN
                         const refActivo = ref(db, 'usuarios_activos/' + usuarioActual);
                         set(refActivo, true);
                         onDisconnect(refActivo).remove();
@@ -231,7 +238,6 @@
 
         window.cerrarSesionOp = () => {
             if(confirm("¿Estás seguro de que deseas cerrar sesión?")) {
-                // ELIMINAR SESIÓN ACTIVA MANUALMENTE AL SALIR
                 if (usuarioActual) {
                     remove(ref(db, 'usuarios_activos/' + usuarioActual));
                 }
@@ -251,7 +257,11 @@
         };
 
         function actualizarDashboard(registros) {
-            if (!inventarioMaestro.length) return;
+            if (!inventarioMaestro.length) {
+                document.getElementById('barrita').style.width = "0%";
+                document.getElementById('textoAvance').innerText = `Avance: 0% (0/0 SKUs)`;
+                return;
+            }
             const codigosContados = new Set(Object.values(registros || {}).map(r => r.cod));
             const totalMaestro = inventarioMaestro.length;
             const avance = codigosContados.size;
@@ -260,14 +270,18 @@
             document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
         }
 
-        get(dbRefMaestro).then((snapshot) => {
+        // --- SOLUCIÓN APLICADA: onValue en lugar de get para leer en tiempo real ---
+        onValue(dbRefMaestro, (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 inventarioMaestro = Object.values(data);
                 document.getElementById('sectionPicking').style.display = 'block';
                 if(navigator.onLine) document.getElementById('statusInv').innerText = "🛜📶 INVENTARIO EN LÍNEA";
-                get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
+            } else {
+                inventarioMaestro = [];
             }
+            // Actualizar la barra y el conteo inmediatamente sin recargar
+            get(dbRefRegistros).then(s => actualizarDashboard(s.val()));
         });
 
         function renderizadoOptimizado(data, elementId, tipo) {
@@ -354,7 +368,6 @@
         window.abrirModal = () => { document.getElementById('modalInc').style.display='flex'; document.getElementById('fueracod').focus(); };
         window.cerrarModal = () => document.getElementById('modalInc').style.display='none';
 
-        // Funciones del Mensaje
         window.abrirModalMensajeOp = () => { document.getElementById('modalMensajeOp').style.display = 'flex'; };
         window.cerrarModalMensajeOp = () => { document.getElementById('modalMensajeOp').style.display = 'none'; };
         window.marcarMensajeLeido = () => {
@@ -451,6 +464,13 @@
     </style>
 </head>
 <body>
+
+<!-- Pantalla de bloqueo al recibir inventario -->
+<div id="overlayCargandoInventario" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; flex-direction:column; justify-content:center; align-items:center; color:white; text-align:center; backdrop-filter: blur(5px);">
+    <div style="font-size: 4rem; margin-bottom: 15px; animation: latidoMensaje 1s infinite;">📦</div>
+    <h2 style="margin: 0; color: #34a853; text-transform: uppercase; font-weight: 900; letter-spacing: 1px;">Recibiendo Nuevo Inventario</h2>
+    <p style="font-size: 1rem; color: #ddd; margin-top: 10px;">Por favor, espere. El sistema se actualizará automáticamente...</p>
+</div>
 
 <div id="loginOverlayOp">
     <div class="login-card-op">

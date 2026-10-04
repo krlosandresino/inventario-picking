@@ -24,6 +24,15 @@
         const dbRefRegistros = ref(db, 'registros');
         const dbRefMaestro = ref(db, 'maestro');
 
+        // Escuchador de estado para pantalla de bloqueo
+        onValue(ref(db, 'estado_sistema/cargando'), (snapshot) => {
+            const cargando = snapshot.val();
+            const overlay = document.getElementById('overlayCargandoInventario');
+            if (overlay) {
+                overlay.style.display = cargando ? 'flex' : 'none';
+            }
+        });
+
         // --- SEGUNDA CONEXIÓN EXCLUSIVA PARA AUTENTICACIÓN (PANEL ADMIN) ---
         const firebaseConfigAuth = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -431,6 +440,7 @@
         
         @keyframes blink-animation { 50% { opacity: 0; } }
         .blinking-text { animation: blink-animation 1s step-start infinite; }
+        @keyframes latidoMensaje { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
 
         .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; transition: all 0.3s; text-align: center; }
         
@@ -511,6 +521,13 @@
     </style>
 </head>
 <body>
+
+<!-- Pantalla de bloqueo al recibir inventario -->
+<div id="overlayCargandoInventario" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; flex-direction:column; justify-content:center; align-items:center; color:white; text-align:center; backdrop-filter: blur(5px);">
+    <div style="font-size: 4rem; margin-bottom: 15px; animation: latidoMensaje 1s infinite;">📦</div>
+    <h2 style="margin: 0; color: #34a853; text-transform: uppercase; font-weight: 900; letter-spacing: 1px;">Recibiendo Nuevo Inventario</h2>
+    <p style="font-size: 1rem; color: #ddd; margin-top: 10px;">Por favor, espere. El sistema se actualizará automáticamente...</p>
+</div>
 
 <div id="loginOverlayOp">
     <div class="login-card-op">

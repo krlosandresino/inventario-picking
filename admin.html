@@ -34,7 +34,7 @@
         let rawRegistrosGlobal = {}; 
         let bateriasGlobal = {}; 
         let mensajesGlobal = {};
-        let usuariosActivosGlobal = []; // Array para guardar usuarios para mensajes globales
+        let usuariosActivosGlobal = []; 
 
         let filtroEstadoGlobal = 'todos';
         let filtroUsuarioGlobal = 'todos'; 
@@ -127,7 +127,7 @@
                 if(reg.usuario) setUsuariosUnicos.add(reg.usuario);
             });
             const arrUsuariosUnicos = Array.from(setUsuariosUnicos);
-            usuariosActivosGlobal = arrUsuariosUnicos; // Actualizamos la lista global para los mensajes
+            usuariosActivosGlobal = arrUsuariosUnicos; 
 
             document.getElementById('countUsuarios').innerText = arrUsuariosUnicos.length;
             
@@ -146,8 +146,7 @@
                         infoBateria = `<span style="font-size:0.75rem; color:${colorTexto}; margin-left:6px; font-weight:normal;">${icono} ${nivel}%</span>`;
                     }
 
-                    // Lógica del ícono de mensaje según estado
-                    let iconMsg = '✉️';
+                    let iconMsg = '✉️️';
                     let titleMsg = `Enviar mensaje directo a ${u}`;
                     if (mensajesGlobal[u]) {
                         if (mensajesGlobal[u].leido) {
@@ -182,7 +181,6 @@
             
             document.getElementById('pendientes').innerText = (totalItems - gestionados);
             
-            // --- NUEVO: CÁLCULO DE LA BARRA DE PROGRESO ---
             let porcentaje = 0;
             if (totalItems > 0) {
                 porcentaje = Math.min(((gestionados / totalItems) * 100), 100).toFixed(1);
@@ -294,13 +292,18 @@
             }
         };
 
-        window.subirExcel = (e) => {
+        window.subirExcel = async (e) => {
             const file = e.target.files[0];
+            if (!file) return;
+
             const btn = document.querySelector('button[onclick="document.getElementById(\'inputExcel\').click()"]');
             const originalText = btn.innerHTML;
             btn.innerHTML = "⏳ CARGANDO...";
             btn.style.pointerEvents = "none";
             btn.style.opacity = "0.7";
+
+            // ACTIVAR PANTALLA DE BLOQUEO EN OPERARIOS
+            await set(ref(db, 'estado_sistema/cargando'), true);
 
             const reader = new FileReader();
             reader.readAsArrayBuffer(file);
@@ -322,6 +325,10 @@
                 btn.style.pointerEvents = "auto";
                 btn.style.opacity = "1";
                 document.getElementById('inputExcel').value = "";
+
+                // DESACTIVAR PANTALLA DE BLOQUEO EN OPERARIOS
+                await set(ref(db, 'estado_sistema/cargando'), false);
+
                 alert("Inventario cargado y actualizado");
             };
         };
@@ -611,7 +618,6 @@
 
             document.getElementById('bodyPendientes').innerHTML = lista.length > 0 
                 ? lista.map(p => {
-                    // Evitar problemas de comillas al pasar el nombre por JS
                     const safeNom = p.nom ? p.nom.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
                     return `
                     <tr>
@@ -644,8 +650,6 @@
 
             renderListaPendientes();
         };
-
-        // -------------- SISTEMA DE MENSAJES Y MISIONES --------------
 
         window.abrirModalMensaje = (user) => {
             if (user === 'TODOS') {
@@ -683,12 +687,10 @@
             const payload = { texto: texto, leido: false, timestamp: new Date().getTime() };
 
             if (user === "TODOS LOS OPERARIOS") {
-                // Enviar a todos los usuarios activos
                 const promesas = usuariosActivosGlobal.map(u => set(ref(db, `mensajes/${u}`), payload));
                 await Promise.all(promesas);
                 alert("Mensaje global enviado correctamente a todos.");
             } else {
-                // Enviar a usuario individual
                 await set(ref(db, `mensajes/${user}`), payload);
                 alert(`Mensaje enviado a ${user} correctamente.`);
             }
@@ -698,7 +700,6 @@
             cerrarModalMensaje();
         };
 
-        // Lógica de Misiones desde Pendientes
         window.abrirModalMision = (cod, pos, nom) => {
             document.getElementById('misionCod').innerText = cod;
             document.getElementById('misionPos').innerText = pos || '---';
@@ -723,7 +724,6 @@
             const cod = document.getElementById('misionCod').innerText;
             const pos = document.getElementById('misionPos').innerText;
             
-            // Texto pre-formateado de la misión
             const texto = `🎯 MISIÓN: Ve a la ubicación ${pos} y revisa el código ${cod}.`;
             
             const btn = document.querySelector('#modalMisionAdmin .btn-success');
@@ -783,7 +783,6 @@
         .mc-faltantes { background: #ffe5e5; color: var(--danger); border: 1px solid #ffcccc; }
         .mc-sobrantes { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
 
-        /* --- ESTILOS DE LA BARRA DE PROGRESO --- */
         .progress-card { background: white; padding: 15px 25px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02); }
         .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: bold; color: #555; font-size: 1rem; }
         .progress-track { width: 100%; background-color: #eef2ff; border-radius: 10px; height: 12px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
@@ -816,7 +815,6 @@
         </div>
     </div>
 
-    <!-- NUEVA SECCIÓN: BARRA DE PROGRESO -->
     <div class="progress-card">
         <div class="progress-header">
             <span><i class="fa-solid fa-bars-progress" style="color: var(--primary); margin-right: 8px;"></i>Avance de Toma Física</span>
