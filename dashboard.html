@@ -241,7 +241,7 @@
                         <div class="feed-qty" style="color:var(--text-main); font-size:1.2rem;">R: ${r.cant}</div>
                     </div>
                 `).join('')
-                : '<div style="color:#aaa; text-align:center; margin-top:20px;">Auditoría en espera...</div>';
+                : '<div style="color:#aaa; text-align:center; margin-top:20px;">Sin actividad reciente...</div>';
 
             // Marquesina (News Ticker)
             let noticias = [];
@@ -436,7 +436,7 @@
 
         <div class="progress-container">
             <div class="progress-header">
-                <span>PROGRESO DEL INVENTARIO GENERAL</span>
+                <span>PROGRESO DEL INVENTARIO ORIFLAME</span>
                 <span id="progreso-texto" style="color: var(--text-main); font-size: 1.2rem;">0%</span>
             </div>
             <div class="progress-track">
@@ -446,19 +446,19 @@
 
         <div class="kpi-grid">
             <div class="kpi-card blue">
-                <div class="kpi-title">Total SKUs (Maestro)</div>
+                <div class="kpi-title">Total SKU</div>
                 <div class="kpi-value" id="kpi-total">0</div>
             </div>
             <div class="kpi-card green">
-                <div class="kpi-title">SKUs Contados</div>
+                <div class="kpi-title">SKU Contados</div>
                 <div class="kpi-value" id="kpi-procesados">0</div>
             </div>
             <div class="kpi-card yellow">
-                <div class="kpi-title">SKUs Pendientes</div>
+                <div class="kpi-title">SKU Pendientes</div>
                 <div class="kpi-value" id="kpi-pendientes">0</div>
             </div>
             <div class="kpi-card purple">
-                <div class="kpi-title">Precisión (ERI)</div>
+                <div class="kpi-title">MARGEN (ERI)</div>
                 <div class="kpi-value" id="kpi-eri">0%</div>
             </div>
         </div>
@@ -488,7 +488,7 @@
 
             <div class="panel" style="border: 1px solid #a855f750;">
                 <div class="panel-title" style="color: var(--purple); border-bottom-color: var(--purple);">
-                    <i class="fa-solid fa-magnifying-glass-chart"></i> AUDITORÍA EN VIVO
+                    <i class="fa-solid fa-magnifying-glass-chart"></i> 2DO CONTEO EN VIVO
                 </div>
                 <div class="scroll-container" id="reconteo-vivo"></div>
             </div>
