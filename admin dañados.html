@@ -129,8 +129,8 @@
     <div class="grid-stats">
         <div class="card bg-neutral"><h3>Total SKU</h3><div class="val" id="stat-total">0</div></div>
         <div class="card bg-ok"><h3>Cuadrados</h3><div class="val" id="stat-ok">0</div></div>
-        <div class="card bg-gap"><h3>Unit. Faltantes</h3><div class="val" id="stat-gap">0</div></div>
-        <div class="card bg-error"><h3>Unit. Sobrantes</h3><div class="val" id="stat-over">0</div></div>
+        <div class="card bg-gap"><h3>SKU Faltantes</h3><div class="val" id="stat-gap">0</div></div>
+        <div class="card bg-error"><h3>SKU Sobrantes</h3><div class="val" id="stat-over">0</div></div>
     </div>
 
     <div class="progress-wrapper"><div id="bar-fill" class="progress-fill">0%</div></div>
@@ -416,7 +416,7 @@
     };
 
     document.getElementById('btnLimpiar').onclick = async () => {
-        if (confirm("⚠️ ¿REINICIAR TODOS LOS CONTEOS A CERO? (Se mantendrá la base de datos cargada)")) {
+        if (confirm("⚠️ ¿DESEAS REINICIAR TODOS LOS CONTEOS?")) {
             const status = document.getElementById('loadingStatus');
             status.innerText = "⏳ Reiniciando conteos...";
             const snap = await getDocs(collection(db, "pedidos"));

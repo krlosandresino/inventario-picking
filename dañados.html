@@ -91,8 +91,9 @@
     import { getFirestore, doc, onSnapshot, updateDoc, increment, collection, arrayUnion, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     // IMPORTACIONES DE REALTIME DATABASE (Base de datos de Usuarios)
+    // Se agregó 'remove' para poder cerrar la sesión
     import { initializeApp as initUsers } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getDatabase, ref as refDB, get, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { getDatabase, ref as refDB, get, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
     // 1. CONFIGURACIÓN PROYECTO DAÑADOS
     const configData = { apiKey: "AIzaSyDOPmWV9pKa0NZCh6BZb46fea8QigvN8vI", authDomain: "anulados-7a9b8.firebaseapp.com", projectId: "anulados-7a9b8", storageBucket: "anulados-7a9b8.firebasestorage.app", messagingSenderId: "296934856812", appId: "1:296934856812:web:1fc755633ceddd28712049" };
@@ -176,7 +177,9 @@
                     document.getElementById('modalOp').style.display = 'none';
                     document.getElementById('appContenido').style.display = 'block';
                     
-                    document.getElementById('infoOp').innerText = "Responsable: " + opNombre;
+                    // Mostrar nombre y botón de cerrar sesión
+                    document.getElementById('infoOp').innerHTML = `👤 ${opNombre} <button onclick="cerrarSesionOp()" style="background:#dc3545; color:white; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; margin-left:10px; font-weight:bold;">CERRAR SESIÓN</button>`;
+                    
                     input.disabled = false; qInput.disabled = false; input.focus();
 
                     // Escribir en usuarios_activos para que el admin lo vea
@@ -187,7 +190,7 @@
                     // Si el admin cierra la sesión desde su panel
                     onValue(refActivo, (snap) => {
                         if (!snap.exists() && opNombre !== "") {
-                            alert("Tu sesión ha sido cerrada por un administrador.");
+                            alert("Tu sesión ha sido cerrada.");
                             location.reload();
                         }
                     });
@@ -209,6 +212,20 @@
             alert("Error al conectar con la base de usuarios");
             btn.innerText = "INGRESAR";
             btn.disabled = false;
+        }
+    }
+
+    // LÓGICA DE CERRAR SESIÓN DEL OPERARIO
+    window.cerrarSesionOp = async () => {
+        if(confirm("¿Seguro que deseas cerrar sesión?")) {
+            try {
+                // Se borra el usuario de la lista de activos y se recarga la página
+                await remove(refDB(rtdb, 'usuarios_activos/' + opNombre));
+                location.reload();
+            } catch(e) {
+                console.error("Error al cerrar sesión:", e);
+                location.reload();
+            }
         }
     }
 
