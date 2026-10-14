@@ -83,7 +83,6 @@
         .sortable:hover { background-color: #e2e6ea; }
         td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.85em; }
         
-        /* Animación suave para la celda actualizada */
         .fila-actualizada { animation: highlight 1.5s ease-out; }
         @keyframes highlight { 0% { background-color: #ffeeba; } 100% { background-color: transparent; } }
 
@@ -136,7 +135,9 @@
     <div class="progress-wrapper"><div id="bar-fill" class="progress-fill">0%</div></div>
     <span class="progress-info">Faltan por procesar: <span id="skus-restantes">0</span> SKUs</span>
 
+    <!-- MODIFICACIÓN PARA ENVOLVER LA SECCIÓN DERECHA -->
     <div class="main-content">
+        <!-- Tabla principal a la izquierda -->
         <div class="panel">
             <h3 style="margin-top:0;">🔴 Monitor de Inventario (Real-Time)</h3>
             <input type="text" id="busqueda" placeholder="🔍 Buscar código..." onkeyup="filtrar()" style="width:100%; padding:12px; margin-bottom:15px; border:2px solid #e9ecef; border-radius:8px; outline:none;">
@@ -156,9 +157,23 @@
             </div>
         </div>
 
-        <div class="panel">
-            <h3 style="margin-top:0;">🏆 Ranking de Lecturas</h3>
-            <div id="operatorStats"></div>
+        <!-- Columna derecha agrupada -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            
+            <!-- PANEL: FUERA DE STOCK -->
+            <div class="panel">
+                <h3 style="margin-top:0;">⚠️ Fuera de Stock</h3>
+                <div id="fsList" style="max-height: 200px; overflow-y: auto; font-size: 0.9em; padding-right: 5px;">
+                    <div style="color:#666; font-style:italic;">No hay registros fuera de stock.</div>
+                </div>
+            </div>
+
+            <!-- PANEL: RANKING LECTURAS -->
+            <div class="panel">
+                <h3 style="margin-top:0;">🏆 Ranking de Lecturas</h3>
+                <div id="operatorStats"></div>
+            </div>
+            
         </div>
     </div>
 </div>
@@ -200,10 +215,8 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     
-    // HABILITAR PERSISTENCIA OFFLINE NATIVA
     enableIndexedDbPersistence(db).catch((err) => {
         if (err.code == 'failed-precondition') console.warn('Persistencia habilitada solo en una pestaña activa.');
-        else if (err.code == 'unimplemented') console.warn('El navegador no soporta persistencia offline.');
     });
 
     let masterData = [];
@@ -291,9 +304,8 @@
         reader.readAsArrayBuffer(file);
     });
 
-    // LÓGICA DE ACTUALIZACIÓN DOM PARCIAL OPTIMIZADA
     onSnapshot(collection(db, "pedidos"), (snap) => {
-        let hasStructuralChanges = false; // Solo true si se agregaron o borraron items (Excel nuevo/limpiar)
+        let hasStructuralChanges = false; 
 
         snap.docChanges().forEach(change => {
             const d = change.doc.data();
@@ -301,7 +313,8 @@
             let est = "PENDIENTE", color = "#999";
 
             if (d.a > 0) {
-                if (d.a === d.m) { est = "CUADRADO"; color = "#28a745"; }
+                if (d.fs) { est = "SOBRANTE"; color = "#dc3545"; } // Fuera de stock es técnicamente sobrante
+                else if (d.a === d.m) { est = "CUADRADO"; color = "#28a745"; }
                 else if (d.a < d.m) { est = "FALTANTE"; color = "#ff9800"; }
                 else { est = "SOBRANTE"; color = "#dc3545"; }
             }
@@ -321,7 +334,6 @@
                 const idx = masterData.findIndex(x => x.id === id);
                 if (idx !== -1) masterData[idx] = rowData;
 
-                // INYECCIÓN PARCIAL AL DOM: Actualiza SOLO la fila exacta afectada sin repintar la tabla completa
                 const targetRow = document.getElementById(`row-${id}`);
                 if (targetRow) {
                     targetRow.innerHTML = `
@@ -330,7 +342,6 @@
                         <td style="color:${rowData.color}; font-weight:bold;">${rowData.est}</td>
                         <td><span style="background:#e7f3ff; color:#1a73e8; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:bold;">${rowData.ops && rowData.ops.length ? rowData.ops.slice(-1) : '--'}</span></td>
                     `;
-                    // Animación breve para identificar el cambio visualmente
                     targetRow.classList.remove('fila-actualizada');
                     void targetRow.offsetWidth; 
                     targetRow.classList.add('fila-actualizada');
@@ -338,8 +349,10 @@
             }
         });
 
-        // RECALCULAR ESTADÍSTICAS EN MEMORIA (Súper rápido)
+        // RECALCULAR ESTADÍSTICAS EN MEMORIA Y SEPARAR LOS FUERA DE STOCK
         let cOK = 0, cGap = 0, cOver = 0, skusLect = 0, opsMap = {};
+        let fsData = []; // Array para los fuera de stock
+
         masterData.forEach(r => {
             if (r.a > 0) {
                 skusLect++;
@@ -347,6 +360,12 @@
                 else if (r.a < r.m) cGap++;
                 else cOver++;
             }
+            
+            // Si tiene la bandera de Fuera de Stock
+            if (r.fs) {
+                fsData.push(r);
+            }
+
             if (r.ops) r.ops.forEach(o => opsMap[o] = (opsMap[o] || 0) + 1);
         });
 
@@ -365,14 +384,24 @@
             .map(([n, c]) => `<div style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #f1f1f1; font-size:14px;"><span>👤 ${n}</span><b>${c} Items</b></div>`)
             .join('');
 
-        // Solo dibuja TODA la tabla desde cero si es la primera carga o si se subió un excel nuevo
+        // RENDERIZAR LISTA DE FUERA DE STOCK
+        if (fsData.length > 0) {
+            document.getElementById('fsList').innerHTML = fsData.map(r => 
+                `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #f1f1f1;">
+                    <b>${r.id}</b> 
+                    <span style="background:#ff9800; color:white; padding:3px 10px; border-radius:12px; font-weight:bold; font-size: 0.85em;">+${r.a}</span>
+                </div>`
+            ).join('');
+        } else {
+            document.getElementById('fsList').innerHTML = `<div style="color:#666; font-style:italic; padding:10px;">No hay registros fuera de stock.</div>`;
+        }
+
         if (hasStructuralChanges || isFirstLoad) {
             window.filtrar();
             isFirstLoad = false;
         }
     });
 
-    // Modificamos el render para inyectar el ID dinámico a cada etiqueta <tr>
     function render(data) {
         document.getElementById('liveTable').innerHTML = data.map(r => `
             <tr id="row-${r.id}">
@@ -444,7 +473,8 @@
             ["Cuadrado", 0], 
             ["Faltante", 0], 
             ["Sobrante", 0], 
-            ["No Encontrado", 0]
+            ["No Encontrado", 0],
+            ["Fuera de Stock", 0] // NUEVA CATEGORÍA EN EL REPORTE
         ];
 
         const snap = await getDocs(collection(db, "pedidos"));
@@ -454,7 +484,9 @@
             let est = "";
             resumen[4][1]++; 
 
-            if (r.a === 0) { est = "NO ENCONTRADO"; resumen[8][1]++; }
+            // Se agregó la condición para Fuera de Stock
+            if (r.fs) { est = "FUERA DE STOCK"; resumen[9][1]++; }
+            else if (r.a === 0) { est = "NO ENCONTRADO"; resumen[8][1]++; }
             else if (r.a < r.m) { est = "FALTANTE"; resumen[6][1]++; }
             else if (r.a === r.m) { est = "CUADRADO"; resumen[5][1]++; }
             else { est = "SOBRANTE"; resumen[7][1]++; }

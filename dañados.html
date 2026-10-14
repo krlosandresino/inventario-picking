@@ -15,7 +15,7 @@
         .scan-section { text-align: center; padding: 20px; border: 2px solid #e9ecef; border-radius: 10px; }
         input[type="text"], input[type="number"], input[type="password"] { width: 90%; padding: 15px; font-size: 24px; border: 2px solid #1a73e8; border-radius: 8px; text-align: center; margin-bottom: 10px; }
         
-        #mensaje { margin: 20px 0; padding: 20px; border-radius: 8px; font-size: 1.2em; font-weight: bold; }
+        #mensaje { margin: 20px 0 0 0; padding: 20px; border-radius: 8px; font-size: 1.2em; font-weight: bold; }
         
         /* Colores de estado */
         .match { background-color: #28a745; color: white; }      
@@ -28,13 +28,14 @@
         .online { background: #28a745 !important; }
         .offline { background: #dc3545 !important; }
         
-        /* Login - Fondo sólido para bloquear visualización */
-        #modalOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #f0f2f5; display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
-        .login-card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 100%; max-width: 400px; }
-        .login-card input { width: 100%; font-size: 18px; padding: 12px; margin-bottom: 15px; border: 2px solid #e9ecef; border-radius: 8px; outline: none; box-sizing: border-box; text-align: left; }
+        /* Modal General */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
+        #modalOp { background: #f0f2f5; } /* Login con fondo sólido */
+        .login-card, .modal { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 100%; max-width: 400px; }
+        .login-card input, .modal input { width: 100%; font-size: 18px; padding: 12px; margin-bottom: 15px; border: 2px solid #e9ecef; border-radius: 8px; outline: none; box-sizing: border-box; text-align: left; }
         .login-card .btn { background: #1a73e8; font-size: 16px; margin-top: 10px; }
 
-        .adv-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; font-size: 0.85em; }
+        .adv-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; font-size: 0.85em; margin-bottom: 20px; }
         .adv-item { background: #f8f9fa; padding: 8px; border-radius: 5px; border: 1px solid #eee; }
 
         @media (max-width: 600px) {
@@ -50,13 +51,26 @@
 <body oncontextmenu="return false;">
 
 <!-- PANTALLA DE ACCESO SÓLIDA -->
-<div id="modalOp">
+<div id="modalOp" class="overlay">
     <div class="login-card">
         <h2 style="margin-top: 0; color: #1a73e8; border-bottom: none; margin-bottom: 20px;">Acceso de Operario</h2>
         <input type="text" id="nombreOperario" placeholder="Usuario" style="text-transform: uppercase;" autocomplete="off">
         <input type="password" id="pinOperario" placeholder="PIN de acceso" inputmode="numeric">
         <button class="btn" id="btnLoginOp" onclick="iniciarApp()">INGRESAR</button>
         <div id="msjErrorModal" style="color: #dc3545; font-size: 0.9rem; margin-top: 10px; font-weight: bold; display: none;">Credenciales incorrectas o sin permisos</div>
+    </div>
+</div>
+
+<!-- MODAL: REGISTRAR FUERA DE STOCK -->
+<div id="modalFS" class="overlay" style="display:none; background: rgba(0,0,0,0.8);">
+    <div class="modal">
+        <h3 style="margin-top: 0; color: #ff9800; border-bottom: none;">⚠️ Fuera de Stock</h3>
+        <input type="text" id="fsCodigo" placeholder="CÓDIGO" style="text-transform: uppercase;" autocomplete="off">
+        <input type="number" id="fsCantidad" placeholder="CANTIDAD" min="1">
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn" style="background:#6c757d;" onclick="cerrarModalFS()">Cancelar</button>
+            <button class="btn" style="background:#28a745;" onclick="registrarFS()">Guardar</button>
+        </div>
     </div>
 </div>
 
@@ -80,27 +94,28 @@
                 <div class="adv-item">🚫 No tocados: <span id="countNew">0</span></div>
                 <div class="adv-item">⬆️ Sobrantes: <span id="countOver">0</span></div>
             </div>
+
+            <!-- BOTÓN FUERA DE STOCK -->
+            <button class="btn" style="background:#ff9800; font-size:1.1em; padding:15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);" onclick="abrirModalFS()">📝 REGISTRAR FUERA DE STOCK</button>
+            
             <div id="mensaje" class="info">Conectando...</div>
         </div>
     </div>
 </div>
 
 <script type="module">
-    // IMPORTACIONES DE FIRESTORE (Base de datos de Dañados)
+    // IMPORTACIONES DE FIRESTORE (Se añadió setDoc)
     import { initializeApp as initData } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, updateDoc, increment, collection, arrayUnion, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, onSnapshot, updateDoc, increment, collection, arrayUnion, enableIndexedDbPersistence, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     // IMPORTACIONES DE REALTIME DATABASE (Base de datos de Usuarios)
-    // Se agregó 'remove' para poder cerrar la sesión
     import { initializeApp as initUsers } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref as refDB, get, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-    // 1. CONFIGURACIÓN PROYECTO DAÑADOS
     const configData = { apiKey: "AIzaSyDOPmWV9pKa0NZCh6BZb46fea8QigvN8vI", authDomain: "anulados-7a9b8.firebaseapp.com", projectId: "anulados-7a9b8", storageBucket: "anulados-7a9b8.firebasestorage.app", messagingSenderId: "296934856812", appId: "1:296934856812:web:1fc755633ceddd28712049" };
     const appData = initData(configData, "DataApp");
     const db = getFirestore(appData);
 
-    // 2. CONFIGURACIÓN PROYECTO USUARIOS
     const configUsers = {
         apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
         authDomain: "inventariopicking.firebaseapp.com",
@@ -113,10 +128,8 @@
     const appUsers = initUsers(configUsers, "UsersApp");
     const rtdb = getDatabase(appUsers);
     
-    // HABILITAR PERSISTENCIA OFFLINE NATIVA
     enableIndexedDbPersistence(db).catch((err) => {
         if (err.code == 'failed-precondition') console.warn('Persistencia habilitada solo en una pestaña activa.');
-        else if (err.code == 'unimplemented') console.warn('El navegador no soporta persistencia offline.');
     });
 
     let baseLocal = {}, opNombre = "";
@@ -157,81 +170,98 @@
         const btn = document.getElementById('btnLoginOp');
 
         if(!u || !p) return;
-
-        btn.innerText = "Verificando...";
-        btn.disabled = true;
+        btn.innerText = "Verificando..."; btn.disabled = true;
 
         try {
             const snapshot = await get(refDB(rtdb, 'usuarios_auth/' + u));
             if (snapshot.exists()) {
                 const userData = snapshot.val();
-                
-                // Valida que el PIN sea correcto y tenga permiso 'danados'
                 if (userData.pin === p && userData.accesos && userData.accesos.danados === true) {
                     opNombre = u;
-                    
-                    // Inicializar contexto de audio
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                     
-                    // Ocultar pantalla de login y mostrar app principal
                     document.getElementById('modalOp').style.display = 'none';
                     document.getElementById('appContenido').style.display = 'block';
                     
-                    // Mostrar nombre y botón de cerrar sesión
                     document.getElementById('infoOp').innerHTML = `👤 ${opNombre} <button onclick="cerrarSesionOp()" style="background:#dc3545; color:white; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; margin-left:10px; font-weight:bold;">CERRAR SESIÓN</button>`;
                     
                     input.disabled = false; qInput.disabled = false; input.focus();
 
-                    // Escribir en usuarios_activos para que el admin lo vea
                     const refActivo = refDB(rtdb, 'usuarios_activos/' + u);
                     set(refActivo, { app: 'Dañados', hora: new Date().toLocaleTimeString() });
                     onDisconnect(refActivo).remove();
 
-                    // Si el admin cierra la sesión desde su panel
                     onValue(refActivo, (snap) => {
                         if (!snap.exists() && opNombre !== "") {
-                            alert("Tu sesión ha sido cerrada.");
-                            location.reload();
+                            alert("Tu sesión ha sido cerrada."); location.reload();
                         }
                     });
-
                 } else {
                     msj.innerText = "Credenciales incorrectas o sin permisos de Dañados";
-                    msj.style.display = 'block';
-                    btn.innerText = "INGRESAR";
-                    btn.disabled = false;
+                    msj.style.display = 'block'; btn.innerText = "INGRESAR"; btn.disabled = false;
                 }
             } else {
-                msj.innerText = "El usuario no existe";
-                msj.style.display = 'block';
-                btn.innerText = "INGRESAR";
-                btn.disabled = false;
+                msj.innerText = "El usuario no existe"; msj.style.display = 'block'; btn.innerText = "INGRESAR"; btn.disabled = false;
             }
         } catch(e) {
-            console.error(e);
-            alert("Error al conectar con la base de usuarios");
-            btn.innerText = "INGRESAR";
-            btn.disabled = false;
+            console.error(e); alert("Error al conectar"); btn.innerText = "INGRESAR"; btn.disabled = false;
         }
     }
 
-    // LÓGICA DE CERRAR SESIÓN DEL OPERARIO
     window.cerrarSesionOp = async () => {
         if(confirm("¿Seguro que deseas cerrar sesión?")) {
-            try {
-                // Se borra el usuario de la lista de activos y se recarga la página
-                await remove(refDB(rtdb, 'usuarios_activos/' + opNombre));
-                location.reload();
-            } catch(e) {
-                console.error("Error al cerrar sesión:", e);
-                location.reload();
-            }
+            try { await remove(refDB(rtdb, 'usuarios_activos/' + opNombre)); location.reload(); } catch(e) { location.reload(); }
         }
     }
 
-    // Eventos de teclado para el login
     document.getElementById('nombreOperario').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('pinOperario').focus(); });
     document.getElementById('pinOperario').addEventListener('keypress', (e) => { if(e.key === 'Enter') iniciarApp(); });
+
+    // LÓGICA DEL BOTÓN FUERA DE STOCK (Con navegación por tecla Enter)
+    window.abrirModalFS = () => {
+        document.getElementById('modalFS').style.display = 'flex';
+        setTimeout(() => document.getElementById('fsCodigo').focus(), 100);
+    };
+
+    window.cerrarModalFS = () => {
+        document.getElementById('modalFS').style.display = 'none';
+        document.getElementById('fsCodigo').value = '';
+        document.getElementById('fsCantidad').value = '';
+        input.focus();
+    };
+
+    document.getElementById('fsCodigo').addEventListener('keypress', (e) => {
+        if(e.key === 'Enter' && e.target.value.trim() !== '') {
+            document.getElementById('fsCantidad').focus();
+        }
+    });
+
+    document.getElementById('fsCantidad').addEventListener('keypress', (e) => {
+        if(e.key === 'Enter') window.registrarFS();
+    });
+
+    window.registrarFS = async () => {
+        const cod = document.getElementById('fsCodigo').value.trim();
+        const cant = parseInt(document.getElementById('fsCantidad').value);
+        
+        if(!cod || isNaN(cant) || cant <= 0) return alert("Ingrese un código y una cantidad válida.");
+        
+        const itemRef = doc(db, "pedidos", cod);
+        
+        // Si por casualidad sí estaba en el archivo original, se suma normal. 
+        // Si no estaba, se crea con el flag fs: true
+        if(baseLocal[cod]) {
+            updateDoc(itemRef, { a: increment(cant), ops: arrayUnion(opNombre) });
+        } else {
+            setDoc(itemRef, { m: 0, a: cant, ops: [opNombre], fs: true });
+        }
+        
+        emitirSonido('ok');
+        msg.innerText = `Fuera de stock registrado: ${cod} (+${cant})`;
+        msg.className = "warning";
+        
+        cerrarModalFS();
+    };
 
     onSnapshot(collection(db, "pedidos"), (snap) => {
         let cOK=0, cGap=0, cNew=0, cOver=0;
@@ -280,7 +310,6 @@
 
     window.addEventListener('online', () => document.getElementById('statusDot').className = 'online');
     window.addEventListener('offline', () => document.getElementById('statusDot').className = 'offline');
-    document.onkeydown = function(e) { if(e.keyCode == 123 || (e.ctrlKey && e.shiftKey && e.keyCode == 'I'.charCodeAt(0)) || (e.ctrlKey && e.keyCode == 'U'.charCodeAt(0))) return false; };
 </script>
 </body>
 </html>
