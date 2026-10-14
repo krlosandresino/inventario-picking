@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👤 Operarios - Mermas</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        
+        /* Contenedor principal de la app */
+        .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); position: relative; }
+        h2 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-top: 0; }
+        .scan-section { text-align: center; padding: 20px; border: 2px solid #e9ecef; border-radius: 10px; }
+        input[type="text"], input[type="number"], input[type="password"] { width: 90%; padding: 15px; font-size: 24px; border: 2px solid #1a73e8; border-radius: 8px; text-align: center; margin-bottom: 10px; }
+        
+        #mensaje { margin: 20px 0; padding: 20px; border-radius: 8px; font-size: 1.2em; font-weight: bold; }
+        
+        /* Colores de estado */
+        .match { background-color: #28a745; color: white; }      
+        .danger { background-color: #dc3545; color: white; }     
+        .warning { background-color: #ff9800; color: white; }    
+        .info { background-color: #e7f3ff; color: #004085; }     
+        
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background-color: #17a2b8; margin-top: 10px; }
+        #statusDot { position: absolute; top: 25px; right: 25px; width: 12px; height: 12px; border-radius: 50%; background: #ccc; }
+        .online { background: #28a745 !important; }
+        .offline { background: #dc3545 !important; }
+        
+        /* Login - Fondo sólido para bloquear visualización */
+        #modalOp { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #f0f2f5; display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
+        .login-card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 100%; max-width: 400px; }
+        .login-card input { width: 100%; font-size: 18px; padding: 12px; margin-bottom: 15px; border: 2px solid #e9ecef; border-radius: 8px; outline: none; box-sizing: border-box; text-align: left; }
+        .login-card .btn { background: #1a73e8; font-size: 16px; margin-top: 10px; }
+
+        .adv-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; font-size: 0.85em; }
+        .adv-item { background: #f8f9fa; padding: 8px; border-radius: 5px; border: 1px solid #eee; }
+
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .container { padding: 15px; }
+            .scan-section { padding: 12px; }
+            input[type="text"], input[type="number"], input[type="password"] { width: 100%; font-size: 20px; padding: 12px; }
+            #statusDot { top: 15px; right: 15px; }
+            .adv-stats { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<!-- PANTALLA DE ACCESO SÓLIDA -->
+<div id="modalOp">
+    <div class="login-card">
+        <h2 style="margin-top: 0; color: #1a73e8; border-bottom: none; margin-bottom: 20px;">Acceso de Operario</h2>
+        <input type="text" id="nombreOperario" placeholder="Usuario" style="text-transform: uppercase;" autocomplete="off">
+        <input type="password" id="pinOperario" placeholder="PIN de acceso" inputmode="numeric">
+        <button class="btn" id="btnLoginOp" onclick="iniciarApp()">INGRESAR</button>
+        <div id="msjErrorModal" style="color: #dc3545; font-size: 0.9rem; margin-top: 10px; font-weight: bold; display: none;">Credenciales incorrectas o sin permisos</div>
+    </div>
+</div>
+
+<!-- CONTENIDO DE LA APP (Oculto inicialmente) -->
+<div id="appContenido" style="display: none;">
+    <div class="container">
+        <div id="statusDot"></div>
+        <h2>🛃 Control de mermas/dañados</h2>
+        <div class="scan-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div id="totalSkus" style="color: #1a73e8; font-weight: bold; font-size: 0.9em;">📦 Total SKUs: 0</div>
+                <div id="infoOp" style="text-align: right; color: #666; font-size: 0.8em;"></div>
+            </div>
+            
+            <input type="text" id="scannerInput" inputmode="numeric" placeholder="ESCANEE AQUÍ..." disabled>
+            <input type="number" id="quantityInput" placeholder="CANTIDAD" min="1" disabled>
+            
+            <div class="adv-stats">
+                <div class="adv-item">✅ Cuadrados: <span id="countOK">0</span></div>
+                <div class="adv-item">⚠️ Faltantes: <span id="countGap">0</span></div>
+                <div class="adv-item">🚫 No tocados: <span id="countNew">0</span></div>
+                <div class="adv-item">⬆️ Sobrantes: <span id="countOver">0</span></div>
+            </div>
+            <div id="mensaje" class="info">Conectando...</div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    // IMPORTACIONES DE FIRESTORE (Base de datos de Dañados)
+    import { initializeApp as initData } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, updateDoc, increment, collection, arrayUnion, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // IMPORTACIONES DE REALTIME DATABASE (Base de datos de Usuarios)
+    import { initializeApp as initUsers } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref as refDB, get, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    // 1. CONFIGURACIÓN PROYECTO DAÑADOS
+    const configData = { apiKey: "AIzaSyDOPmWV9pKa0NZCh6BZb46fea8QigvN8vI", authDomain: "anulados-7a9b8.firebaseapp.com", projectId: "anulados-7a9b8", storageBucket: "anulados-7a9b8.firebasestorage.app", messagingSenderId: "296934856812", appId: "1:296934856812:web:1fc755633ceddd28712049" };
+    const appData = initData(configData, "DataApp");
+    const db = getFirestore(appData);
+
+    // 2. CONFIGURACIÓN PROYECTO USUARIOS
+    const configUsers = {
+        apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
+        authDomain: "inventariopicking.firebaseapp.com",
+        databaseURL: "https://inventariopicking-default-rtdb.firebaseio.com",
+        projectId: "inventariopicking",
+        storageBucket: "inventariopicking.firebasestorage.app",
+        messagingSenderId: "92946062722",
+        appId: "1:92946062722:web:b9f379d04c1d1d42d1039b"
+    };
+    const appUsers = initUsers(configUsers, "UsersApp");
+    const rtdb = getDatabase(appUsers);
+    
+    // HABILITAR PERSISTENCIA OFFLINE NATIVA
+    enableIndexedDbPersistence(db).catch((err) => {
+        if (err.code == 'failed-precondition') console.warn('Persistencia habilitada solo en una pestaña activa.');
+        else if (err.code == 'unimplemented') console.warn('El navegador no soporta persistencia offline.');
+    });
+
+    let baseLocal = {}, opNombre = "";
+    let audioCtx;
+    const input = document.getElementById('scannerInput'), qInput = document.getElementById('quantityInput'), msg = document.getElementById('mensaje');
+
+    let initLoad = true;
+    onSnapshot(doc(db, "config", "reset"), () => { if(!initLoad) location.reload(); initLoad = false; });
+
+    function emitirSonido(tipo) {
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        if (tipo === 'ok') {
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(800, audioCtx.currentTime); 
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.15); 
+        } else {
+            oscillator.type = 'square';
+            oscillator.frequency.setValueAtTime(300, audioCtx.currentTime); 
+            gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.4); 
+        }
+    }
+
+    // LÓGICA DE LOGIN CONECTADA A USUARIOS
+    window.iniciarApp = async () => {
+        const u = document.getElementById('nombreOperario').value.trim().toUpperCase();
+        const p = document.getElementById('pinOperario').value.trim();
+        const msj = document.getElementById('msjErrorModal');
+        const btn = document.getElementById('btnLoginOp');
+
+        if(!u || !p) return;
+
+        btn.innerText = "Verificando...";
+        btn.disabled = true;
+
+        try {
+            const snapshot = await get(refDB(rtdb, 'usuarios_auth/' + u));
+            if (snapshot.exists()) {
+                const userData = snapshot.val();
+                
+                // Valida que el PIN sea correcto y tenga permiso 'danados'
+                if (userData.pin === p && userData.accesos && userData.accesos.danados === true) {
+                    opNombre = u;
+                    
+                    // Inicializar contexto de audio
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Ocultar pantalla de login y mostrar app principal
+                    document.getElementById('modalOp').style.display = 'none';
+                    document.getElementById('appContenido').style.display = 'block';
+                    
+                    document.getElementById('infoOp').innerText = "Responsable: " + opNombre;
+                    input.disabled = false; qInput.disabled = false; input.focus();
+
+                    // Escribir en usuarios_activos para que el admin lo vea
+                    const refActivo = refDB(rtdb, 'usuarios_activos/' + u);
+                    set(refActivo, { app: 'Dañados', hora: new Date().toLocaleTimeString() });
+                    onDisconnect(refActivo).remove();
+
+                    // Si el admin cierra la sesión desde su panel
+                    onValue(refActivo, (snap) => {
+                        if (!snap.exists() && opNombre !== "") {
+                            alert("Tu sesión ha sido cerrada por un administrador.");
+                            location.reload();
+                        }
+                    });
+
+                } else {
+                    msj.innerText = "Credenciales incorrectas o sin permisos de Dañados";
+                    msj.style.display = 'block';
+                    btn.innerText = "INGRESAR";
+                    btn.disabled = false;
+                }
+            } else {
+                msj.innerText = "El usuario no existe";
+                msj.style.display = 'block';
+                btn.innerText = "INGRESAR";
+                btn.disabled = false;
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Error al conectar con la base de usuarios");
+            btn.innerText = "INGRESAR";
+            btn.disabled = false;
+        }
+    }
+
+    // Eventos de teclado para el login
+    document.getElementById('nombreOperario').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('pinOperario').focus(); });
+    document.getElementById('pinOperario').addEventListener('keypress', (e) => { if(e.key === 'Enter') iniciarApp(); });
+
+    onSnapshot(collection(db, "pedidos"), (snap) => {
+        let cOK=0, cGap=0, cNew=0, cOver=0;
+        
+        document.getElementById('totalSkus').innerText = "📦 Total SKUs: " + snap.size;
+        
+        snap.forEach(doc => {
+            const d = doc.data(); baseLocal[doc.id] = d;
+            if(d.a === 0) cNew++; else if(d.a === d.m) cOK++; else if(d.a < d.m) cGap++; else cOver++;
+        });
+        document.getElementById('countOK').innerText = cOK; document.getElementById('countGap').innerText = cGap;
+        document.getElementById('countNew').innerText = cNew; document.getElementById('countOver').innerText = cOver;
+
+        if (msg.innerText === "Conectando...") {
+            msg.innerText = "¡Listo para escanear!";
+            msg.className = "match"; 
+        }
+    });
+
+    input.addEventListener('keypress', (e) => { if(e.key === 'Enter' && input.value) qInput.focus(); });
+    qInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') procesarEscaneo(); });
+
+    function procesarEscaneo() {
+        const cod = input.value.trim(), cant = parseInt(qInput.value) || 1, item = baseLocal[cod];
+        if(item) {
+            item.a += cant;
+            
+            let cl = "info";
+            if (item.a === item.m) cl = "match"; 
+            else if (item.a > item.m) cl = "warning"; 
+            else cl = "danger"; 
+
+            emitirSonido('ok');
+
+            msg.innerText = `Procesado: ${cod}`;
+            msg.className = cl;
+            
+            updateDoc(doc(db, "pedidos", cod), { a: increment(cant), ops: arrayUnion(opNombre) });
+        } else { 
+            msg.innerText = `❌ No existe: ${cod}`; 
+            msg.className = "danger"; 
+            emitirSonido('error'); 
+        }
+        input.value = ""; qInput.value = ""; input.focus();
+    }
+
+    window.addEventListener('online', () => document.getElementById('statusDot').className = 'online');
+    window.addEventListener('offline', () => document.getElementById('statusDot').className = 'offline');
+    document.onkeydown = function(e) { if(e.keyCode == 123 || (e.ctrlKey && e.shiftKey && e.keyCode == 'I'.charCodeAt(0)) || (e.ctrlKey && e.keyCode == 'U'.charCodeAt(0))) return false; };
+</script>
+</body>
+</html>
