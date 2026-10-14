@@ -35,16 +35,12 @@
         .login-card input, .modal input { width: 100%; font-size: 18px; padding: 12px; margin-bottom: 15px; border: 2px solid #e9ecef; border-radius: 8px; outline: none; box-sizing: border-box; text-align: left; }
         .login-card .btn { background: #1a73e8; font-size: 16px; margin-top: 10px; }
 
-        .adv-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; font-size: 0.85em; margin-bottom: 20px; }
-        .adv-item { background: #f8f9fa; padding: 8px; border-radius: 5px; border: 1px solid #eee; }
-
         @media (max-width: 600px) {
             body { padding: 10px; }
             .container { padding: 15px; }
             .scan-section { padding: 12px; }
             input[type="text"], input[type="number"], input[type="password"] { width: 100%; font-size: 20px; padding: 12px; }
             #statusDot { top: 15px; right: 15px; }
-            .adv-stats { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -88,15 +84,8 @@
             <input type="text" id="scannerInput" inputmode="numeric" placeholder="ESCANEE AQUÍ..." disabled>
             <input type="number" id="quantityInput" placeholder="CANTIDAD" min="1" disabled>
             
-            <div class="adv-stats">
-                <div class="adv-item">✅ Cuadrados: <span id="countOK">0</span></div>
-                <div class="adv-item">⚠️ Faltantes: <span id="countGap">0</span></div>
-                <div class="adv-item">🚫 No tocados: <span id="countNew">0</span></div>
-                <div class="adv-item">⬆️ Sobrantes: <span id="countOver">0</span></div>
-            </div>
-
             <!-- BOTÓN FUERA DE STOCK -->
-            <button class="btn" style="background:#ff9800; font-size:1.1em; padding:15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);" onclick="abrirModalFS()">📝 REGISTRAR FUERA DE STOCK</button>
+            <button class="btn" style="background:#ff9800; font-size:1.1em; padding:15px; margin-top:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);" onclick="abrirModalFS()">📝 REGISTRAR FUERA DE STOCK</button>
             
             <div id="mensaje" class="info">Conectando...</div>
         </div>
@@ -104,11 +93,9 @@
 </div>
 
 <script type="module">
-    // IMPORTACIONES DE FIRESTORE (Se añadió setDoc)
     import { initializeApp as initData } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getFirestore, doc, onSnapshot, updateDoc, increment, collection, arrayUnion, enableIndexedDbPersistence, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // IMPORTACIONES DE REALTIME DATABASE (Base de datos de Usuarios)
     import { initializeApp as initUsers } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref as refDB, get, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
@@ -217,7 +204,7 @@
     document.getElementById('nombreOperario').addEventListener('keypress', (e) => { if(e.key === 'Enter') document.getElementById('pinOperario').focus(); });
     document.getElementById('pinOperario').addEventListener('keypress', (e) => { if(e.key === 'Enter') iniciarApp(); });
 
-    // LÓGICA DEL BOTÓN FUERA DE STOCK (Con navegación por tecla Enter)
+    // LÓGICA DEL BOTÓN FUERA DE STOCK
     window.abrirModalFS = () => {
         document.getElementById('modalFS').style.display = 'flex';
         setTimeout(() => document.getElementById('fsCodigo').focus(), 100);
@@ -248,8 +235,6 @@
         
         const itemRef = doc(db, "pedidos", cod);
         
-        // Si por casualidad sí estaba en el archivo original, se suma normal. 
-        // Si no estaba, se crea con el flag fs: true
         if(baseLocal[cod]) {
             updateDoc(itemRef, { a: increment(cant), ops: arrayUnion(opNombre) });
         } else {
@@ -264,16 +249,11 @@
     };
 
     onSnapshot(collection(db, "pedidos"), (snap) => {
-        let cOK=0, cGap=0, cNew=0, cOver=0;
-        
         document.getElementById('totalSkus').innerText = "📦 Total SKUs: " + snap.size;
         
         snap.forEach(doc => {
-            const d = doc.data(); baseLocal[doc.id] = d;
-            if(d.a === 0) cNew++; else if(d.a === d.m) cOK++; else if(d.a < d.m) cGap++; else cOver++;
+            baseLocal[doc.id] = doc.data();
         });
-        document.getElementById('countOK').innerText = cOK; document.getElementById('countGap').innerText = cGap;
-        document.getElementById('countNew').innerText = cNew; document.getElementById('countOver').innerText = cOver;
 
         if (msg.innerText === "Conectando...") {
             msg.innerText = "¡Listo para escanear!";
