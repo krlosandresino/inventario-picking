@@ -23,7 +23,7 @@
         
         // Referencias a la base de datos
         const dbRefUsuarios = ref(db, 'usuarios_auth');
-        const dbRefActivos = ref(db, 'usuarios_activos'); // Nuevo nodo para sesiones activas
+        const dbRefActivos = ref(db, 'usuarios_activos'); 
 
         window.crearUsuario = () => {
             const user = document.getElementById('nuevoUsuario').value.trim().toUpperCase();
@@ -32,6 +32,7 @@
             const chkMuestreo = document.getElementById('chkMuestreo').checked;
             const chkReconteo = document.getElementById('chkReconteo').checked;
             const chkBuscador = document.getElementById('chkBuscador').checked;
+            const chkDanados = document.getElementById('chkDanados').checked; // NUEVO PERMISO
 
             if (!user || !pin) {
                 alert("Por favor, ingrese un nombre de usuario y un PIN.");
@@ -44,7 +45,8 @@
                     picking: chkPicking,
                     muestreo: chkMuestreo,
                     reconteo: chkReconteo,
-                    buscador: chkBuscador
+                    buscador: chkBuscador,
+                    danados: chkDanados // SE GUARDA EL NUEVO PERMISO
                 }
             }).then(() => {
                 alert("Usuario " + user + " creado exitosamente.");
@@ -54,6 +56,7 @@
                 document.getElementById('chkMuestreo').checked = false;
                 document.getElementById('chkReconteo').checked = false;
                 document.getElementById('chkBuscador').checked = false;
+                document.getElementById('chkDanados').checked = false;
                 document.getElementById('nuevoUsuario').focus();
             }).catch(e => alert("Error al crear usuario: " + e));
         };
@@ -64,21 +67,18 @@
             }
         };
 
-        // Lógica para cerrar sesión activa de forma individual
         window.cerrarSesionIndividual = (user) => {
             if(confirm(`¿Seguro que deseas cerrar la sesión activa del usuario ${user}?`)) {
                 remove(ref(db, 'usuarios_activos/' + user));
             }
         };
 
-        // Lógica para cerrar la sesión de todos los usuarios
         window.cerrarSesionGeneral = () => {
             if(confirm("⚠️ ¿Estás completamente seguro de cerrar la sesión de TODOS los usuarios activos?")) {
                 remove(ref(db, 'usuarios_activos'));
             }
         };
 
-        // Lógica para alternar pestañas
         window.cambiarTab = (tab) => {
             const btnReg = document.getElementById('btnRegistrados');
             const btnAct = document.getElementById('btnActivos');
@@ -98,7 +98,7 @@
                 pnlAct.style.display = 'none';
             } else {
                 btnAct.style.background = 'white';
-                btnAct.style.color = '#2e7d32'; // Verde para activos
+                btnAct.style.color = '#2e7d32'; 
                 btnAct.style.borderBottomColor = '#2e7d32';
                 
                 btnReg.style.background = 'transparent';
@@ -110,7 +110,6 @@
             }
         };
 
-        // Monitoreo de Usuarios Registrados
         onValue(dbRefUsuarios, (snapshot) => {
             const data = snapshot.val();
             const tabla = document.getElementById('cuerpoUsuarios');
@@ -127,7 +126,8 @@
                         info.accesos?.picking ? "Picking" : "",
                         info.accesos?.muestreo ? "Muestreo" : "",
                         info.accesos?.reconteo ? "Reconteo" : "",
-                        info.accesos?.buscador ? "Buscador" : ""
+                        info.accesos?.buscador ? "Buscador" : "",
+                        info.accesos?.danados ? "Dañados" : "" // SE MUESTRA EL NUEVO PERMISO
                     ].filter(Boolean).join(", ") || "Ninguno";
 
                     tabla.innerHTML += `
@@ -146,7 +146,6 @@
             document.getElementById('totalUsuarios').innerText = `(${total})`;
         });
 
-        // Monitoreo de Usuarios Activos
         onValue(dbRefActivos, (snapshot) => {
             const data = snapshot.val();
             const tabla = document.getElementById('cuerpoActivos');
@@ -195,7 +194,7 @@
     <div id="msjError" style="color: var(--danger); font-size: 0.9rem; text-align: center; margin-top: 10px; font-weight: bold; display: none;">Credenciales incorrectas</div>
 </div>
 
-<!-- CONTENIDO DE LA APLICACIÓN (Oculto por defecto) -->
+<!-- CONTENIDO DE LA APLICACIÓN -->
 <div id="mainApp" style="display: none; width: 100%; flex-direction: column; align-items: center;">
     
     <div class="container">
@@ -209,12 +208,13 @@
             <label><input type="checkbox" id="chkMuestreo"> Muestreo</label>
             <label><input type="checkbox" id="chkReconteo"> Reconteo</label>
             <label><input type="checkbox" id="chkBuscador"> Buscador</label>
+            <label><input type="checkbox" id="chkDanados"> Dañados</label> <!-- NUEVO CHECKBOX -->
         </div>
         
         <button class="btn-main" onclick="crearUsuario()">GUARDAR USUARIO</button>
     </div>
 
-    <!-- CONTENEDOR CON PESTAÑAS (REGISTRADOS Y ACTIVOS) -->
+    <!-- CONTENEDOR CON PESTAÑAS -->
     <div class="container" style="padding: 0; overflow: hidden;">
         <!-- Cabecera de pestañas -->
         <div style="display: flex; background: #f0f0f0; border-bottom: 1px solid #ddd;">
