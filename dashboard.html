@@ -9,8 +9,8 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        // Cambio clave 1: Importamos onChildAdded y onChildChanged en lugar de onValue
-        import { getDatabase, ref, onChildAdded, onChildChanged } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        // Cambio clave 1: Importamos onChildAdded, onChildChanged y onChildRemoved
+        import { getDatabase, ref, onChildAdded, onChildChanged, onChildRemoved } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -82,6 +82,10 @@
             rawDataMaestro[snap.key] = snap.val();
             registrarActividad();
         });
+        onChildRemoved(dbRefMaestro, snap => {
+            delete rawDataMaestro[snap.key];
+            registrarActividad();
+        });
 
         onChildAdded(dbRefRegistros, snap => {
             rawDataRegistros[snap.key] = snap.val();
@@ -91,6 +95,10 @@
             rawDataRegistros[snap.key] = snap.val();
             registrarActividad();
         });
+        onChildRemoved(dbRefRegistros, snap => {
+            delete rawDataRegistros[snap.key];
+            registrarActividad();
+        });
 
         onChildAdded(dbRefReconteo, snap => {
             rawDataReconteo[snap.key] = snap.val();
@@ -98,6 +106,10 @@
         });
         onChildChanged(dbRefReconteo, snap => {
             rawDataReconteo[snap.key] = snap.val();
+            registrarActividad();
+        });
+        onChildRemoved(dbRefReconteo, snap => {
+            delete rawDataReconteo[snap.key];
             registrarActividad();
         });
 
@@ -111,6 +123,7 @@
 
             // Variables de cálculo
             let agrupados = {};
+            let agrupadosReconteo = {};
             let statsOperadores = {};
             let ultimosRegistros = [];
             let statsZonas = {};
@@ -137,17 +150,21 @@
                 if (reg.usuario) agrupados[reg.cod].usuarios.add(reg.usuario);
             }
 
+            // Procesar 2do Conteo (Reconteo) para cálculo unificado de ERI Final
+            for (let key in rawDataReconteo) {
+                let reg = rawDataReconteo[key];
+                if (!agrupadosReconteo[reg.cod]) {
+                    agrupadosReconteo[reg.cod] = { cant: 0 };
+                }
+                agrupadosReconteo[reg.cod].cant += parseFloat(reg.cant || 0);
+            }
+
             let skusProcesados = 0;
             let cuadrados = 0;
 
             for (let cod in agrupados) {
                 skusProcesados++;
                 let maestroItem = dataMaestro[cod] || { stock: 0, pos: '' };
-                let teorico = parseFloat(maestroItem.stock || 0);
-                let fisico = agrupados[cod].cant;
-                
-                let dif = fisico - teorico;
-                if (dif === 0) cuadrados++;
 
                 agrupados[cod].usuarios.forEach(user => {
                     if (!statsOperadores[user]) statsOperadores[user] = 0;
@@ -162,6 +179,21 @@
                 }
             }
 
+            // Calcular SKUs Cuadrados unificando 1er Conteo y Reconteo sobre todo el Maestro
+            for (let cod in dataMaestro) {
+                let maestroItem = dataMaestro[cod];
+                let teorico = parseFloat(maestroItem.stock || 0);
+                
+                let fueContado1 = agrupados[cod] !== undefined;
+                let fisico1 = fueContado1 ? agrupados[cod].cant : 0;
+                
+                let fueContado2 = agrupadosReconteo[cod] !== undefined;
+                let fisico2 = fueContado2 ? agrupadosReconteo[cod].cant : 0;
+                
+                let difGen = fueContado2 ? (fisico2 - teorico) : (fisico1 - teorico);
+                if (difGen === 0) cuadrados++;
+            }
+
             // KPIs Principales
             document.getElementById('kpi-procesados').innerText = skusProcesados;
             let pendientes = totalMaestro - skusProcesados;
@@ -171,7 +203,7 @@
             document.getElementById('progreso-texto').innerText = `${pctAvance}%`;
             document.getElementById('barra-progreso').style.width = `${pctAvance}%`;
 
-            let eri = skusProcesados > 0 ? ((cuadrados / skusProcesados) * 100).toFixed(1) : 0;
+            let eri = totalMaestro > 0 ? ((cuadrados / totalMaestro) * 100).toFixed(1) : 0;
             const kpiEri = document.getElementById('kpi-eri');
             kpiEri.innerText = `${eri}%`;
             if(eri >= 95) kpiEri.style.color = 'var(--success)';
@@ -458,7 +490,7 @@
                 <div class="kpi-value" id="kpi-pendientes">0</div>
             </div>
             <div class="kpi-card purple">
-                <div class="kpi-title">MARGEN (ERI)</div>
+                <div class="kpi-title">MARGEN (ERI FINAL)</div>
                 <div class="kpi-value" id="kpi-eri">0%</div>
             </div>
         </div>

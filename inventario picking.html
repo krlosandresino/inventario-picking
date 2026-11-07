@@ -97,6 +97,27 @@
             } catch(e) { console.log("Audio no soportado"); }
         };
 
+        window.emitirAlertaMensaje = () => {
+            if (navigator.vibrate) {
+                navigator.vibrate([300, 150, 300, 150, 400]);
+            }
+            try {
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                    const locucion = new SpeechSynthesisUtterance("Has recibido un mensaje");
+                    locucion.lang = "es-ES";
+                    locucion.rate = 1;
+                    locucion.pitch = 1;
+                    locucion.volume = 1;
+                    window.speechSynthesis.speak(locucion);
+                } else {
+                    emitirSonido('error');
+                }
+            } catch (e) {
+                emitirSonido('error');
+            }
+        };
+
         let wakeLock = null;
         const solicitarWakeLock = async () => {
             if ('wakeLock' in navigator) {
@@ -177,7 +198,7 @@
 
                                     if (!msj.leido) {
                                         icono.style.display = 'inline-block'; 
-                                        emitirSonido('error'); 
+                                        emitirAlertaMensaje(); 
                                         btnCerrar.innerText = "ENTENDIDO";
                                     } else {
                                         icono.style.display = 'none'; 
@@ -495,7 +516,7 @@
             <span id="iconoMensaje" style="display:none; cursor:pointer; font-size: 1.5rem; animation: latidoMensaje 1s infinite;" onclick="abrirModalMensajeOp()" title="¡Tienes un mensaje!">📩</span>
         </div>
         <div id="historialMensaje" onclick="abrirModalMensajeOp()">
-            💬 Último mensaje
+            💬 Ver Último mensaje
         </div>
     </center>
     
@@ -547,7 +568,7 @@
 
 <div class="modal" id="modalMensajeOp">
     <div class="modal-content" style="text-align: center;">
-        <h3 style="margin-top:0; color: var(--primary);">💬 Mensaje</h3>
+        <h3 style="margin-top:0; color: var(--primary);">💬 !Mensaje!</h3>
         <p id="textoMensajeRecibido" style="font-size: 1.05rem; color: #333; margin: 20px 0; font-weight: bold;"></p>
         <button id="btnCerrarMensaje" class="btn-main" onclick="marcarMensajeLeido()">ENTENDIDO</button>
     </div>

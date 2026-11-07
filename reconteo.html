@@ -33,6 +33,7 @@
         let usuarioActual = "";
         let itemSeleccionado = null;
         let permitirPendientesNoContados = false;
+        let registrosParciales = JSON.parse(localStorage.getItem('reconteo_parciales_op') || '{}');
 
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
@@ -162,7 +163,11 @@
             for (let k in data) {
                 let cod = data[k].cod;
                 reconteoAgrupado[cod] = true; 
+                if (registrosParciales[cod] !== undefined) {
+                    delete registrosParciales[cod];
+                }
             }
+            localStorage.setItem('reconteo_parciales_op', JSON.stringify(registrosParciales));
             calcularPendientesDebounced(); 
         });
 
@@ -207,9 +212,13 @@
                 
                 listaDescuadrados.forEach((item) => {
                     const objStr = encodeURIComponent(JSON.stringify(item));
+                    const tieneParcial = registrosParciales[item.cod] !== undefined;
                     
                     const card = document.createElement('div');
                     card.className = 'card-reconteo';
+                    if (tieneParcial) {
+                        card.style.borderLeft = '4px solid #f9ab00';
+                    }
                     card.onclick = () => abrirReconteo(objStr);
                     
                     const divUbic = document.createElement('div');
@@ -233,10 +242,17 @@
                     divDetalle.appendChild(spanCod);
                     divDetalle.appendChild(br);
                     divDetalle.appendChild(spanNom);
+
+                    if (tieneParcial) {
+                        const spanParcial = document.createElement('span');
+                        spanParcial.style.cssText = "font-size:0.75rem; color:#d97706; font-weight:bold; margin-top:3px;";
+                        spanParcial.innerText = `📌 1er Reg: ${registrosParciales[item.cod]} unds (Falta 2do)`;
+                        divDetalle.appendChild(spanParcial);
+                    }
                     
                     const divIcon = document.createElement('div');
                     divIcon.className = 'icon-accion';
-                    divIcon.innerText = '➡️';
+                    divIcon.innerText = tieneParcial ? '2️⃣' : '➡️';
                     
                     card.appendChild(divUbic);
                     card.appendChild(divDetalle);
@@ -246,8 +262,26 @@
                 });
                 
                 contenedorLista.appendChild(fragment); 
+                filtrarLista();
             }
         }
+
+        window.actualizarSumaModal = () => {
+            const v1 = document.getElementById('cantidadReconteo').value;
+            const v2 = document.getElementById('cantidadReconteo2').value;
+            const resumen = document.getElementById('resumenSumaReconteo');
+
+            const n1 = v1 !== "" ? parseFloat(v1) : 0;
+            const n2 = v2 !== "" ? parseFloat(v2) : 0;
+
+            if (v1 === "" && v2 === "") {
+                resumen.innerText = "";
+            } else if (v1 !== "" && v2 !== "") {
+                resumen.innerText = `Total a enviar: ${n1 + n2} unds (${n1} + ${n2})`;
+            } else {
+                resumen.innerText = `Total a enviar: ${n1 + n2} unds`;
+            }
+        };
 
         window.abrirReconteo = (objStr) => {
             itemSeleccionado = JSON.parse(decodeURIComponent(objStr));
@@ -255,38 +289,88 @@
             document.getElementById('recUbicacion').innerText = itemSeleccionado.pos;
             document.getElementById('recCodigo').innerText = itemSeleccionado.cod;
             
-            const input = document.getElementById('cantidadReconteo');
-            input.value = ""; input.focus();
+            const input1 = document.getElementById('cantidadReconteo');
+            const input2 = document.getElementById('cantidadReconteo2');
+            input2.value = "";
+
+            if (registrosParciales[itemSeleccionado.cod] !== undefined) {
+                input1.value = registrosParciales[itemSeleccionado.cod];
+                actualizarSumaModal();
+                input2.focus();
+            } else {
+                input1.value = "";
+                actualizarSumaModal();
+                input1.focus();
+            }
         };
 
         window.cerrarModalReconteo = () => { document.getElementById('modalReconteo').style.display = 'none'; itemSeleccionado = null; };
 
-        window.guardarReconteo = () => {
-            const inputElement = document.getElementById('cantidadReconteo');
-            const cantStr = inputElement.value;
-            const cant = parseFloat(cantStr);
+        window.guardarPrimerRegistro = () => {
+            const input1 = document.getElementById('cantidadReconteo');
+            const cantStr1 = input1.value;
+            const cant1 = parseFloat(cantStr1);
 
-            if (!cantStr || !itemSeleccionado) { 
+            if (cantStr1 === "" || !itemSeleccionado) {
+                alert("Ingrese la cantidad del 1er Registro.");
+                input1.focus();
+                return;
+            }
+            if (isNaN(cant1) || cant1 < 0) {
+                alert("Por favor, ingrese un número válido mayor o igual a cero.");
+                input1.value = "";
+                input1.focus();
+                return;
+            }
+
+            registrosParciales[itemSeleccionado.cod] = cant1;
+            localStorage.setItem('reconteo_parciales_op', JSON.stringify(registrosParciales));
+
+            if (navigator.vibrate) navigator.vibrate(60);
+            mostrarToast(`📌 1er Reg. de ${itemSeleccionado.cod} guardado (${cant1} unds)`);
+            cerrarModalReconteo();
+            calcularPendientes();
+        };
+
+        window.guardarReconteo = () => {
+            const inputElement1 = document.getElementById('cantidadReconteo');
+            const inputElement2 = document.getElementById('cantidadReconteo2');
+            const cantStr1 = inputElement1.value;
+            const cantStr2 = inputElement2.value;
+
+            if (cantStr1 === "" && cantStr2 === "") { 
                 alert("Ingrese cantidad"); 
+                inputElement1.focus();
                 return; 
             }
-            if (isNaN(cant) || cant < 0) { 
+            if (!itemSeleccionado) return;
+
+            const cant1 = cantStr1 !== "" ? parseFloat(cantStr1) : 0;
+            const cant2 = cantStr2 !== "" ? parseFloat(cantStr2) : 0;
+
+            if (isNaN(cant1) || cant1 < 0 || isNaN(cant2) || cant2 < 0) { 
                 alert("Por favor, ingrese un número válido mayor o igual a cero."); 
-                inputElement.value = "";
-                inputElement.focus();
                 return; 
             } 
+
+            const totalCant = cant1 + cant2;
+            const totalCantStr = String(totalCant);
+            const codActual = itemSeleccionado.cod;
             
             push(dbRefReconteo, {
                 cod: itemSeleccionado.cod,
                 nom: itemSeleccionado.nom,
                 pos: itemSeleccionado.pos,
-                cant: cantStr, 
+                cant: totalCantStr, 
                 fecha: new Date().toLocaleString(),
                 usuario: usuarioActual
             }).then(() => {
+                if (registrosParciales[codActual] !== undefined) {
+                    delete registrosParciales[codActual];
+                    localStorage.setItem('reconteo_parciales_op', JSON.stringify(registrosParciales));
+                }
                 if (navigator.vibrate) navigator.vibrate(100); 
-                mostrarToast(`✅ ${itemSeleccionado.cod} guardado (${cantStr} unds)`);
+                mostrarToast(`✅ ${codActual} guardado (${totalCantStr} unds)`);
                 cerrarModalReconteo();
             }).catch((error) => {
                 alert("Error al guardar en Firebase. Revisa tu conexión.");
@@ -415,11 +499,15 @@
         <div class="modal-ubicacion" id="recUbicacion"></div>
         <div id="recCodigo" style="font-size: 1.2rem; font-weight: bold; color: var(--primary);"></div>
         
-        <input type="number" id="cantidadReconteo" inputmode="numeric" placeholder="¿Cuánto encontraste?" style="text-align: center; font-size: 1.2rem; padding: 15px; margin-top:15px;">
+        <input type="number" id="cantidadReconteo" inputmode="numeric" placeholder="1er Registro (¿Cuánto encontraste?)" oninput="actualizarSumaModal()" style="text-align: center; font-size: 1.05rem; padding: 12px; margin-top:12px;">
+        <input type="number" id="cantidadReconteo2" inputmode="numeric" placeholder="2do Registro (Opcional / Atrás)" oninput="actualizarSumaModal()" style="text-align: center; font-size: 1.05rem; padding: 12px; margin-top:6px;">
+        <div id="resumenSumaReconteo" style="font-size: 0.85rem; font-weight: bold; color: var(--success); margin-top: 6px; min-height: 18px;"></div>
         
-        <div style="display:flex; gap:10px; margin-top:15px;">
-            <button class="btn-main" onclick="guardarReconteo()">GUARDAR</button>
-            <button class="btn-main" style="background:#666" onclick="cerrarModalReconteo()">CANCELAR</button>
+        <button class="btn-main" style="background:#f9ab00; color:#000; padding: 11px; margin-top: 8px; font-size: 0.85rem;" onclick="guardarPrimerRegistro()">📌 GUARDAR 1ER REG. (SEGUIR EN LISTA)</button>
+        
+        <div style="display:flex; gap:10px; margin-top:8px;">
+            <button class="btn-main" style="margin-top:0;" onclick="guardarReconteo()">✅ ENVIAR</button>
+            <button class="btn-main" style="background:#666; margin-top:0;" onclick="cerrarModalReconteo()">CANCELAR</button>
         </div>
     </div>
 </div>
@@ -429,7 +517,8 @@
 <script>
     document.getElementById('userOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('pinOp').focus(); });
     document.getElementById('pinOp').addEventListener('keydown', (e) => { if(e.key === 'Enter') iniciarSesionOp(); });
-    document.getElementById('cantidadReconteo').addEventListener('keydown', (e) => { if(e.key === 'Enter') guardarReconteo(); });
+    document.getElementById('cantidadReconteo').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('cantidadReconteo2').focus(); } });
+    document.getElementById('cantidadReconteo2').addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); guardarReconteo(); } });
     document.addEventListener('contextmenu', event => event.preventDefault());
 </script>
 </body>
