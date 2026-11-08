@@ -24,8 +24,9 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // NODO EXCLUSIVO PARA ESTE ARCHIVO (NO AFECTA A LOS DEMÁS MÓDULOS)
+        // NODOS EXCLUSIVOS PARA ESTE ARCHIVO (NO AFECTAN A LOS DEMÁS MÓDULOS)
         const dbRefProcess = ref(db, 'process_codigos_perdidos');
+        const dbRefProcessManual = ref(db, 'process_cruce_manual');
 
         // NODOS DE SOLO LECTURA (ADMIN Y ADMIN RECONTEO)
         const dbRefMaestro = ref(db, 'maestro');
@@ -36,6 +37,7 @@
         let mapMaestro = {};
         let mapConteo1 = {};
         let mapReconteo = {};
+        let mapEstadosManuales = {};
 
         let listaCruzadaGlobal = [];
         let listaFiltradaGlobal = [];
@@ -44,6 +46,9 @@
         let sortColumna = null;
         let sortAscendente = true;
         let debounceTimer;
+
+        let itemsCargados = 0;
+        const itemsPorPagina = 50;
 
         window.validarAcceso = () => {
             const user = document.getElementById('userLog').value.trim().toLowerCase();
@@ -67,6 +72,12 @@
         onValue(dbRefProcess, (snapshot) => {
             const val = snapshot.val();
             dataProcess = val ? Object.values(val) : [];
+            triggerCruceDatos();
+        });
+
+        // 1.1 Escuchar estados manuales de análisis en Process
+        onValue(dbRefProcessManual, (snapshot) => {
+            mapEstadosManuales = snapshot.val() || {};
             triggerCruceDatos();
         });
 
@@ -116,7 +127,7 @@
             triggerCruceDatos();
         });
 
-        // Subir nuevo Excel a Process (Borra primero la base anterior de Process y sube la nueva)
+        // Subir nuevo Excel a Process (Carga atómica directa con set sin doble viaje de red)
         window.subirExcelProcess = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -190,11 +201,11 @@
                     return;
                 }
 
-                // 1. Primero borra únicamente la base anterior de Process
-                await remove(dbRefProcess);
-
-                // 2. Sube la nueva base de Process
-                await set(dbRefProcess, listaSubir);
+                // Reemplazo atómico de la base de Process y limpieza de marcas manuales previas
+                await Promise.all([
+                    set(dbRefProcess, listaSubir),
+                    remove(dbRefProcessManual)
+                ]);
 
                 alert(`✅ Base Process actualizada correctamente: ${listaSubir.length} códigos cargados.`);
             } catch (err) {
@@ -210,8 +221,19 @@
 
         window.limpiarBaseProcess = async () => {
             if (confirm("⚠️ ¿Deseas borrar la base cargada en Process?\n\nEsto NO afectará al Inventario ni a Reconteo.")) {
-                await remove(dbRefProcess);
+                await Promise.all([
+                    remove(dbRefProcess),
+                    remove(dbRefProcessManual)
+                ]);
                 alert("✅ Base de Process limpiada correctamente.");
+            }
+        };
+
+        window.cambiarEstadoManual = async (cod, valor) => {
+            if (valor === "AUTO") {
+                await remove(ref(db, `process_cruce_manual/${cod}`));
+            } else {
+                await set(ref(db, `process_cruce_manual/${cod}`), valor);
             }
         };
 
@@ -226,7 +248,7 @@
 
             dataProcess.forEach(item => {
                 const cod = String(item.cod).trim();
-                const cantProcess = parseFloat(item.cantProcess || 0);
+                const cantProcess = Math.abs(parseFloat(item.cantProcess || 0));
 
                 const infoMaestro = mapMaestro[cod];
                 const infoConteo1 = mapConteo1[cod];
@@ -279,6 +301,25 @@
                     contSobrantes++;
                 }
 
+                // Cálculo de Cruce Neto: Cant. Process es negativo (en contra), por lo tanto se resta a difVigente
+                // Si difVigente es +158 y Process es 160 -> +158 - 160 = -2
+                // Si difVigente es -578 y Process es 3   -> -578 - 3 = -581
+                const cruceNeto = difVigente - cantProcess;
+                let estadoAutoTexto = "";
+
+                if (cruceNeto === 0) {
+                    estadoAutoTexto = "Cubierto (0)";
+                } else if (difVigente > 0) {
+                    // El sobrante positivo consume la pérdida de Process
+                    estadoAutoTexto = cruceNeto > 0 ? `Cubre (+${cruceNeto})` : `Falta Cubrir (${cruceNeto})`;
+                } else {
+                    // Faltante negativo en Picking + pérdida negativa en Process se acumulan
+                    estadoAutoTexto = `Faltante (${cruceNeto})`;
+                }
+
+                const estadoManual = mapEstadosManuales[cod] || "AUTO";
+                const estadoFinalReporte = estadoManual === "AUTO" ? `Auto: ${estadoAutoTexto}` : `Manual: ${estadoManual}`;
+
                 totalSkusActivos++;
                 totalUnidadesProcess += cantProcess;
 
@@ -293,6 +334,10 @@
                     dif1,
                     reconteoFinal,
                     difVigente,
+                    cruceNeto,
+                    estadoAutoTexto,
+                    estadoManual,
+                    estadoFinalReporte,
                     estadoPicking
                 });
             });
@@ -330,7 +375,7 @@
                 sortAscendente = true;
             }
 
-            const cols = ['cod', 'pos', 'stock', 'encontrados', 'reconteoFinal', 'difVigente', 'cantProcess'];
+            const cols = ['cod', 'pos', 'stock', 'encontrados', 'reconteoFinal', 'difVigente', 'cantProcess', 'cruceNeto'];
             cols.forEach(c => {
                 const el = document.getElementById('sort-' + c);
                 if (el) el.innerText = (sortColumna === c) ? (sortAscendente ? ' ▲' : ' ▼') : '';
@@ -347,7 +392,7 @@
                 if (filtroEstadoProcess !== 'todos') {
                     cumpleEstado = item.estadoPicking === filtroEstadoProcess;
                 }
-                const texto = `${item.cod} ${item.pos} ${item.nom}`.toLowerCase();
+                const texto = `${item.cod} ${item.pos} ${item.nom} ${item.estadoFinalReporte}`.toLowerCase();
                 return cumpleEstado && texto.includes(term);
             });
 
@@ -373,17 +418,24 @@
                 });
             }
 
-            renderTablaProcess();
-        };
-
-        function renderTablaProcess() {
+            itemsCargados = 0;
             const tbody = document.getElementById('bodyProcess');
+            tbody.innerHTML = "";
+
             if (listaFiltradaGlobal.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:#888;">No hay códigos con diferencias o que coincidan con la búsqueda.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:#888;">No hay códigos con diferencias o que coincidan con la búsqueda.</td></tr>`;
                 return;
             }
 
-            tbody.innerHTML = listaFiltradaGlobal.map(item => {
+            renderizarSiguientePaginaProcess();
+        };
+
+        // Renderizado optimizado con DocumentFragment y paginación por lotes
+        function renderizarSiguientePaginaProcess() {
+            const chunk = listaFiltradaGlobal.slice(itemsCargados, itemsCargados + itemsPorPagina);
+            if (chunk.length === 0) return;
+
+            const html = chunk.map(item => {
                 let colorDif1 = '#888';
                 if (item.dif1 !== null) {
                     colorDif1 = item.dif1 === 0 ? '#2ec4b6' : (item.dif1 < 0 ? '#e71d36' : '#4361ee');
@@ -398,6 +450,20 @@
                     ? `<small style="display:block; color:#f9ab00; font-weight:bold; font-size:0.7rem;">Pendiente 1er C.</small>`
                     : (item.dif1 !== null ? `<small style="color:${colorDif1}; font-weight:bold;">(${item.dif1 > 0 ? '+' + item.dif1 : item.dif1})</small>` : '');
 
+                const colorNeto = item.cruceNeto === 0 ? '#15803d' : (item.cruceNeto < 0 ? '#e71d36' : '#4361ee');
+                const signoNeto = item.cruceNeto > 0 ? '+' + item.cruceNeto : item.cruceNeto;
+
+                let claseSelect = 'select-cruce-auto';
+                if (item.estadoManual !== 'AUTO') {
+                    if (item.estadoManual === 'Justificado' || item.estadoManual === 'Revisado OK') claseSelect = 'select-cruce-ok';
+                    else if (item.estadoManual === 'Parcial' || item.estadoManual === 'En Análisis') claseSelect = 'select-cruce-warn';
+                    else if (item.estadoManual === 'No Justifica') claseSelect = 'select-cruce-danger';
+                } else {
+                    if (item.cruceNeto >= 0 && item.difVigente > 0) claseSelect = 'select-cruce-ok';
+                    else if (item.difVigente > 0 && item.cruceNeto < 0) claseSelect = 'select-cruce-warn';
+                    else claseSelect = 'select-cruce-danger';
+                }
+
                 return `
                     <tr>
                         <td style="font-weight:bold; color:var(--primary);">${item.cod}</td>
@@ -407,15 +473,51 @@
                         <td align="center" style="background:#eff6ff; font-weight:bold;">${item.reconteoFinal}</td>
                         <td align="center" style="color:${colorDifFinal}; font-weight:bold;">${item.difVigente !== "-" && item.difVigente > 0 ? '+' + item.difVigente : item.difVigente}</td>
                         <td align="center" style="background:#fff8eb; font-weight:bold; color:#d97706;">${item.cantProcess}</td>
+                        <td align="center" style="min-width:210px;">
+                            <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                                <span style="font-size:0.82rem; font-weight:bold; color:${colorNeto};">Neto: ${signoNeto}</span>
+                                <select class="select-cruce ${claseSelect}" onchange="cambiarEstadoManual('${item.cod}', this.value)">
+                                    <option value="AUTO" ${item.estadoManual === 'AUTO' ? 'selected' : ''}>⚡ Auto: ${item.estadoAutoTexto}</option>
+                                    <option value="Justificado" ${item.estadoManual === 'Justificado' ? 'selected' : ''}>✅ Justificado</option>
+                                    <option value="Parcial" ${item.estadoManual === 'Parcial' ? 'selected' : ''}>⚠️ Parcial</option>
+                                    <option value="No Justifica" ${item.estadoManual === 'No Justifica' ? 'selected' : ''}>❌ No Justifica</option>
+                                    <option value="En Análisis" ${item.estadoManual === 'En Análisis' ? 'selected' : ''}>🔍 En Análisis</option>
+                                    <option value="Revisado OK" ${item.estadoManual === 'Revisado OK' ? 'selected' : ''}>✔️ Revisado OK</option>
+                                </select>
+                            </div>
+                        </td>
                     </tr>
                 `;
             }).join('');
+
+            const fragment = document.createDocumentFragment();
+            const tempDiv = document.createElement('tbody');
+            tempDiv.innerHTML = html;
+            while (tempDiv.firstChild) {
+                fragment.appendChild(tempDiv.firstChild);
+            }
+            document.getElementById('bodyProcess').appendChild(fragment);
+            itemsCargados += itemsPorPagina;
         }
 
+        // Observer para Infinite Scroll optimizado
+        setTimeout(() => {
+            const scrollContainer = document.querySelector('.scroll');
+            const sentinel = document.getElementById('sentinelaProcess');
+            if (scrollContainer && sentinel) {
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting) {
+                        renderizarSiguientePaginaProcess();
+                    }
+                }, { root: scrollContainer, rootMargin: '100px' });
+                observer.observe(sentinel);
+            }
+        }, 300);
+
         window.copiarTablaExcel = () => {
-            let texto = "Código\tUbicación\tStock\tEncontrados\tReconteo Final\tDif. Picking\tCant. Process\n";
+            let texto = "Código\tUbicación\tStock\tEncontrados\tReconteo Final\tDif. Picking\tCant. Process\tCruce Neto\tEstado Cruce\n";
             listaFiltradaGlobal.forEach(r => {
-                texto += `${r.cod}\t${r.pos}\t${r.stock}\t${r.encontrados}\t${r.reconteoFinal}\t${r.difVigente}\t${r.cantProcess}\n`;
+                texto += `${r.cod}\t${r.pos}\t${r.stock}\t${r.encontrados}\t${r.reconteoFinal}\t${r.difVigente}\t${r.cantProcess}\t${r.cruceNeto}\t${r.estadoFinalReporte}\n`;
             });
             navigator.clipboard.writeText(texto).then(() => {
                 alert("¡Datos copiados! Ya puedes pegarlos en Excel.");
@@ -434,7 +536,9 @@
                 "1er conteo": r.encontrados,
                 "Reconteo": r.reconteoFinal,
                 "Dif. Final Picking": r.difVigente,
-                "Cant. Process": r.cantProcess
+                "Cant. Process": r.cantProcess,
+                "Cruce Neto": r.cruceNeto,
+                "Estado Cruce (Auto/Manual)": r.estadoFinalReporte
             }));
 
             const wb = XLSX.utils.book_new();
@@ -479,13 +583,19 @@
         table { width: 100%; border-collapse: collapse; }
         th { position: sticky; top: 0; background: #f9fafb; padding: 14px 12px; text-align: left; color: #555; border-bottom: 2px solid #eee; font-size: 0.82rem; cursor: pointer; user-select: none; z-index: 5; }
         td { padding: 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; user-select: text; -webkit-user-select: text; cursor: text; }
+
+        .select-cruce { padding: 5px 8px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 700; cursor: pointer; outline: none; border: 1px solid #cbd5e1; width: 100%; max-width: 215px; text-align: center; }
+        .select-cruce-auto { background: #f8fafc; color: #475569; border-color: #cbd5e1; }
+        .select-cruce-ok { background: #e6f9f7; color: #0f766e; border-color: #99f6e4; }
+        .select-cruce-warn { background: #fff4cc; color: #b45309; border-color: #fde68a; }
+        .select-cruce-danger { background: #ffe5e5; color: #b91c1c; border-color: #fecaca; }
     </style>
 </head>
 <body>
 
 <div id="loginOverlay">
     <div class="login-card">
-        <i class="fa-solid fa-magnifying-glass-Location" style="font-size: 3rem; color: var(--primary); margin-bottom: 10px;"></i>
+        <i class="fa-solid fa-magnifying-glass-location" style="font-size: 3rem; color: var(--primary); margin-bottom: 10px;"></i>
         <h2 style="margin-top:0;">Acceso Admin</h2>
         <input type="text" id="userLog" placeholder="Usuario">
         <input type="password" id="passLog" placeholder="Contraseña">
@@ -507,6 +617,7 @@
     <div class="stats-grid">
         <div class="stat-card">
             <span>SKUs en Process</span>
+            <small style="display: block; font-size: 0.8em; opacity: 0.85;">(Cruce Inventario)</small>
             <h2 id="statTotalCodigos">0</h2>
         </div>
         <div class="stat-card" style="border-color: var(--warning);">
@@ -543,7 +654,7 @@
             </div>
         </div>
 
-        <input type="text" id="busquedaProcess" class="search-input" placeholder="🔍 Buscar por código o ubicación..." oninput="ejecutarFiltro()">
+        <input type="text" id="busquedaProcess" class="search-input" placeholder="🔍 Buscar por código, ubicación o estado de cruce..." oninput="ejecutarFiltro()">
 
         <div class="scroll">
             <table>
@@ -556,10 +667,12 @@
                         <th onclick="ordenarPor('reconteoFinal')" style="text-align:center; background:#eff6ff;">Reconteo<span id="sort-reconteoFinal"></span></th>
                         <th onclick="ordenarPor('difVigente')" style="text-align:center;">Dif. Final Picking<span id="sort-difVigente"></span></th>
                         <th onclick="ordenarPor('cantProcess')" style="text-align:center; background:#fff8eb;">Cant. Process<span id="sort-cantProcess"></span></th>
+                        <th onclick="ordenarPor('cruceNeto')" style="text-align:center;">Cruce Neto (Auto / Manual)<span id="sort-cruceNeto"></span></th>
                     </tr>
                 </thead>
                 <tbody id="bodyProcess"></tbody>
             </table>
+            <div id="sentinelaProcess" style="height: 1px;"></div>
         </div>
     </div>
 </div>
