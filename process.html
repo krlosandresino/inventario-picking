@@ -428,18 +428,18 @@
                 return;
             }
             const rows = listaFiltradaGlobal.map(r => ({
-                "Código (Variante)": r.cod,
+                "Código": r.cod,
                 "Ubicación": r.pos,
-                "Stock (Admin)": r.stock,
-                "Encontrados (Admin)": r.encontrados,
-                "Reconteo Final (Admin Reconteo)": r.reconteoFinal,
+                "Stock (Sistema)": r.stock,
+                "1er conteo": r.encontrados,
+                "Reconteo": r.reconteoFinal,
                 "Dif. Final Picking": r.difVigente,
-                "Cant. Process (Physical Quantity)": r.cantProcess
+                "Cant. Process": r.cantProcess
             }));
 
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Seguimiento Process");
-            XLSX.writeFile(wb, "Reporte_Process_Codigos_Perdidos.xlsx");
+            XLSX.writeFile(wb, "Reporte_Process.xlsx");
         };
     </script>
     <style>
