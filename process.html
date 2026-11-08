@@ -515,7 +515,7 @@
         }, 300);
 
         window.copiarTablaExcel = () => {
-            let texto = "Código\tUbicación\tStock\tEncontrados\tReconteo Final\tDif. Picking\tCant. Process\tCruce Neto\tEstado Cruce\n";
+            let texto = "Código\tUbicación\tStock (Sistema)\t1er conteo\tReconteo\tDif. Picking\tCant. Process\tCruce Neto\tEstado Cruce\n";
             listaFiltradaGlobal.forEach(r => {
                 texto += `${r.cod}\t${r.pos}\t${r.stock}\t${r.encontrados}\t${r.reconteoFinal}\t${r.difVigente}\t${r.cantProcess}\t${r.cruceNeto}\t${r.estadoFinalReporte}\n`;
             });
@@ -617,7 +617,6 @@
     <div class="stats-grid">
         <div class="stat-card">
             <span>SKUs en Process</span>
-            <small style="display: block; font-size: 0.8em; opacity: 0.85;">(Cruce Inventario)</small>
             <h2 id="statTotalCodigos">0</h2>
         </div>
         <div class="stat-card" style="border-color: var(--warning);">
