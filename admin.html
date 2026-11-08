@@ -107,10 +107,10 @@
             document.getElementById('countInc').innerText = lista.length;
             document.getElementById('bodyIncidencias').innerHTML = lista.map(inc => `
                 <tr>
-                    <td style="width:20%; color:#888;">${inc.fecha.split(',')[1] || inc.fecha}</td>
-                    <td><b>${inc.usuario}</b></td>
-                    <td style="color:#e71d36; font-weight:bold">${inc.comentario}</td>
-                    <td align="center" style="width:10%;">
+                    <td style="white-space:nowrap; color:#888; user-select: text; cursor: text;" title="Seleccionar hora">${(inc.fecha.split(',')[1] || inc.fecha).trim()}</td>
+                    <td style="white-space:nowrap; user-select: text; cursor: text;" title="Seleccionar operador"><b>${inc.usuario}</b></td>
+                    <td style="white-space:nowrap; color:#e71d36; font-weight:bold; user-select: text; cursor: text;" title="Seleccionar reporte">${inc.comentario}</td>
+                    <td align="center" style="white-space:nowrap;">
                         <button class="btn-action-delete" onclick="eliminarIncidencia('${inc.key}')" title="Eliminar alerta">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
@@ -146,7 +146,7 @@
                         infoBateria = `<span style="font-size:0.75rem; color:${colorTexto}; margin-left:6px; font-weight:normal;">${icono} ${nivel}%</span>`;
                     }
 
-                    let iconMsg = '✉️️';
+                    let iconMsg = '✉';
                     let titleMsg = `Enviar mensaje directo a ${u}`;
                     if (mensajesGlobal[u]) {
                         if (mensajesGlobal[u].leido) {
@@ -761,6 +761,7 @@
         table { width: 100%; border-collapse: collapse; }
         th { position: sticky; top: 0; background: #f9fafb; padding: 15px; text-align: left; color: #777; border-bottom: 2px solid #eee; font-size: 0.8rem; }
         td { padding: 15px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
+        #bodyIncidencias, #bodyIncidencias td, #bodyIncidencias b { padding: 10px 6px; font-size: 0.8rem; white-space: nowrap; user-select: text; -webkit-user-select: text; }
         .user-pill { background: #eef2ff; color: var(--primary); padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 0.75rem; display: inline-block; }
         .user-filter-btn:hover { background: #d0d7ff; } 
         .btn-blue { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; transition: transform 0.1s ease; }
@@ -828,9 +829,9 @@
     <div class="stats-grid">
         <div class="stat-card"><span>SKU TOTALES</span><h2 id="totalMaestro">0</h2></div>
         <div class="stat-card" style="border-color: var(--warning); cursor: pointer;" onclick="abrirModalPendientes()" title="Ver lista de códigos pendientes">
-            <span>PENDIENTES</span><h2 id="pendientes">0</h2>
+            <span>SKU PENDIENTES</span><h2 id="pendientes">0</h2>
         </div>
-        <div class="stat-card" style="border-color: var(--danger);"><span>Fuera de Stock</span><h2 id="countInc">0</h2></div>
+        <div class="stat-card" style="border-color: var(--danger);"><span>Fuera de Stock (SKU)</span><h2 id="countInc">0</h2></div>
         <div class="stat-card" style="border-color: var(--success);"><span>Usuarios Registrados</span><h2 id="countUsuarios">0</h2></div>
     </div>
 
@@ -982,7 +983,11 @@
     document.getElementById('userLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('passLog').focus(); });
     document.getElementById('passLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') validarAcceso(); });
 
-    document.addEventListener('contextmenu', event => event.preventDefault());
+    document.addEventListener('contextmenu', event => {
+        if (!event.target.closest('#bodyIncidencias')) {
+            event.preventDefault();
+        }
+    });
     document.addEventListener('keydown', function(e) {
         if (e.keyCode === 123) { e.preventDefault(); return false; }
         if (e.ctrlKey && e.keyCode === 85) { e.preventDefault(); return false; }
