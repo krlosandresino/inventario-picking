@@ -48,7 +48,9 @@
         .card {
             background: white; padding: 15px; border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center;
+            cursor: pointer; transition: opacity 0.25s ease, transform 0.1s ease;
         }
+        .card:active { transform: scale(0.98); }
         .card h3 { margin: 0; font-size: 0.85em; color: #666; text-transform: uppercase; }
         .card .val { font-size: 2em; font-weight: bold; margin: 5px 0; }
 
@@ -81,7 +83,8 @@
         th { text-align: left; padding: 12px; font-size: 0.85em; border-bottom: 2px solid #dee2e6; user-select: none; }
         .sortable { cursor: pointer; }
         .sortable:hover { background-color: #e2e6ea; }
-        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.85em; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.85em; user-select: text; -webkit-user-select: text; cursor: text; }
+        #fsList { user-select: text; -webkit-user-select: text; }
         
         .fila-actualizada { animation: highlight 1.5s ease-out; }
         @keyframes highlight { 0% { background-color: #ffeeba; } 100% { background-color: transparent; } }
@@ -89,6 +92,8 @@
         .btn-reporte { background: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
         .btn-danger { background: #dc3545; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
         .btn-upload { background: #ffc107; color: #333; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-del-item { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 2px 6px; transition: transform 0.15s ease; }
+        .btn-del-item:hover { transform: scale(1.2); }
 
         @media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } }
         @media (max-width: 600px) {
@@ -102,7 +107,7 @@
         }
     </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
 
 <div id="loginOverlay">
     <div class="login-card">
@@ -126,10 +131,10 @@
 
 <div class="container">
     <div class="grid-stats">
-        <div class="card bg-neutral"><h3>Total SKU</h3><div class="val" id="stat-total">0</div></div>
-        <div class="card bg-ok"><h3>Cuadrados</h3><div class="val" id="stat-ok">0</div></div>
-        <div class="card bg-gap"><h3>SKU Faltantes</h3><div class="val" id="stat-gap">0</div></div>
-        <div class="card bg-error"><h3>SKU Sobrantes</h3><div class="val" id="stat-over">0</div></div>
+        <div class="card bg-neutral" id="card-TODOS" onclick="setFiltroEstado('TODOS')" title="Mostrar todos los SKUs"><h3>Total SKU</h3><div class="val" id="stat-total">0</div></div>
+        <div class="card bg-ok" id="card-CUADRADO" onclick="setFiltroEstado('CUADRADO')" title="Filtrar SKUs Cuadrados"><h3>Cuadrados</h3><div class="val" id="stat-ok">0</div></div>
+        <div class="card bg-gap" id="card-FALTANTE" onclick="setFiltroEstado('FALTANTE')" title="Filtrar SKUs Faltantes"><h3>SKU Faltantes</h3><div class="val" id="stat-gap">0</div></div>
+        <div class="card bg-error" id="card-SOBRANTE" onclick="setFiltroEstado('SOBRANTE')" title="Filtrar SKUs Sobrantes"><h3>SKU Sobrantes</h3><div class="val" id="stat-over">0</div></div>
     </div>
 
     <div class="progress-wrapper"><div id="bar-fill" class="progress-fill">0%</div></div>
@@ -138,16 +143,17 @@
     <div class="main-content">
         <div class="panel">
             <h3 style="margin-top:0;">🔴 Monitor de Inventario (Real-Time)</h3>
-            <input type="text" id="busqueda" placeholder="🔍 Buscar código..." onkeyup="filtrar()" style="width:100%; padding:12px; margin-bottom:15px; border:2px solid #e9ecef; border-radius:8px; outline:none;">
+            <input type="text" id="busqueda" placeholder="🔍 Buscar código u operario..." onkeyup="filtrar()" style="width:100%; padding:12px; margin-bottom:15px; border:2px solid #e9ecef; border-radius:8px; outline:none;">
             <div id="loadingStatus" style="font-weight: bold; color: #1a73e8; margin-bottom: 10px;"></div>
             <div class="scroll-area">
                 <table>
                     <thead>
                         <tr>
                             <th class="sortable" onclick="ordenar('id')" title="Ordenar por Código">Código ↕️</th>
-                            <th>Sistema / Escaneado</th>
+                            <th class="sortable" onclick="ordenar('a')" title="Ordenar por Cantidad Escaneada">Sistema / Escaneado ↕️</th>
                             <th class="sortable" onclick="ordenar('est')" title="Ordenar por Estado">Estado ↕️</th>
                             <th class="sortable" onclick="ordenar('ops')" title="Ordenar por Operario">Operario ↕️</th>
+                            <th style="text-align:center;">Acción</th>
                         </tr>
                     </thead>
                     <tbody id="liveTable"></tbody>
@@ -172,6 +178,11 @@
 </div>
 
 <script>
+    document.addEventListener('contextmenu', event => {
+        if (!event.target.closest('#liveTable') && !event.target.closest('#fsList')) {
+            event.preventDefault();
+        }
+    });
     document.onkeydown = function(e) { if(e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 'I'.charCodeAt(0) || e.keyCode == 'J'.charCodeAt(0))) || (e.ctrlKey && e.keyCode == 'U'.charCodeAt(0))) return false; };
 
     function validarAcceso() {
@@ -194,7 +205,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, getDocs, doc, setDoc, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, getDocs, doc, setDoc, updateDoc, deleteDoc, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = { 
         apiKey: "AIzaSyDOPmWV9pKa0NZCh6BZb46fea8QigvN8vI", 
@@ -215,7 +226,52 @@
     let masterData = [];
     let sortColumna = '';
     let sortAscendente = true;
+    let filtroEstadoActual = 'TODOS';
+    let filtroOperarioActual = '';
     let isFirstLoad = true;
+
+    window.eliminarFueraStock = async (id) => {
+        if (confirm(`¿Seguro que deseas ELIMINAR definitivamente el registro Fuera de Stock ${id}?`)) {
+            await deleteDoc(doc(db, "pedidos", id));
+        }
+    };
+
+    window.accionItemTabla = async (id, esFs) => {
+        if (esFs) {
+            await window.eliminarFueraStock(id);
+        } else {
+            if (confirm(`¿Deseas reiniciar a 0 el conteo del código ${id}?`)) {
+                await updateDoc(doc(db, "pedidos", id), { a: 0, ops: [] });
+            }
+        }
+    };
+
+    window.setFiltroEstado = (estado) => {
+        if (estado === 'TODOS' || filtroEstadoActual === estado) {
+            filtroEstadoActual = 'TODOS';
+        } else {
+            filtroEstadoActual = estado;
+        }
+        document.querySelectorAll('.grid-stats .card').forEach(c => c.style.opacity = '1');
+        if (filtroEstadoActual !== 'TODOS') {
+            document.querySelectorAll('.grid-stats .card').forEach(c => {
+                if (c.id !== `card-${filtroEstadoActual}`) c.style.opacity = '0.45';
+            });
+        }
+        window.filtrar();
+    };
+
+    window.setFiltroOperario = (op) => {
+        const inputBusqueda = document.getElementById('busqueda');
+        if (filtroOperarioActual === op) {
+            filtroOperarioActual = '';
+            inputBusqueda.value = '';
+        } else {
+            filtroOperarioActual = op;
+            inputBusqueda.value = op;
+        }
+        window.filtrar();
+    };
 
     document.getElementById('uploadExcel').addEventListener('change', async (e) => {
         const file = e.target.files[0];
@@ -253,6 +309,20 @@
                 return;
             }
 
+            // Agrupar y sumar en memoria códigos duplicados del Excel
+            const agrupadosExcel = {};
+            for (let i = headerRowIndex + 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || row.length === 0) continue;
+
+                const sku = String(row[skuCol] || "").trim();
+                const meta = parseFloat(row[metaCol]);
+
+                if (sku && !isNaN(meta)) {
+                    agrupadosExcel[sku] = (agrupadosExcel[sku] || 0) + meta;
+                }
+            }
+
             status.innerText = "⏳ Limpiando datos antiguos...";
             const snap = await getDocs(collection(db, "pedidos"));
             let batch = writeBatch(db);
@@ -269,18 +339,10 @@
             count = 0;
             let totalCargados = 0;
 
-            for (let i = headerRowIndex + 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row || row.length === 0) continue;
-
-                const sku = String(row[skuCol] || "").trim();
-                const meta = parseFloat(row[metaCol]);
-
-                if (sku && !isNaN(meta)) {
-                    batch.set(doc(db, "pedidos", sku), { m: meta, a: 0, ops: [] });
-                    count++;
-                    totalCargados++;
-                }
+            for (const [sku, metaTotal] of Object.entries(agrupadosExcel)) {
+                batch.set(doc(db, "pedidos", sku), { m: metaTotal, a: 0, ops: [] });
+                count++;
+                totalCargados++;
 
                 if (count >= 450) {
                     await batch.commit();
@@ -296,6 +358,19 @@
         };
         reader.readAsArrayBuffer(file);
     });
+
+    function generarCeldasFila(rowData) {
+        const btnAccion = (rowData.a > 0 || rowData.fs)
+            ? `<button class="btn-del-item" onclick="accionItemTabla('${rowData.id}', ${!!rowData.fs})" title="${rowData.fs ? 'Eliminar Fuera de Stock' : 'Reiniciar conteo a 0'}">🗑️</button>`
+            : '';
+        return `
+            <td><b>${rowData.id}</b></td>
+            <td>${rowData.m} / <b>${rowData.a}</b></td>
+            <td style="color:${rowData.color}; font-weight:bold;">${rowData.est}</td>
+            <td><span style="background:#e7f3ff; color:#1a73e8; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:bold;">${rowData.ops && rowData.ops.length ? rowData.ops.slice(-1) : '--'}</span></td>
+            <td style="text-align:center;">${btnAccion}</td>
+        `;
+    }
 
     onSnapshot(collection(db, "pedidos"), (snap) => {
         let hasStructuralChanges = false; 
@@ -327,17 +402,16 @@
                 const idx = masterData.findIndex(x => x.id === id);
                 if (idx !== -1) masterData[idx] = rowData;
 
-                const targetRow = document.getElementById(`row-${id}`);
-                if (targetRow) {
-                    targetRow.innerHTML = `
-                        <td><b>${rowData.id}</b></td>
-                        <td>${rowData.m} / <b>${rowData.a}</b></td>
-                        <td style="color:${rowData.color}; font-weight:bold;">${rowData.est}</td>
-                        <td><span style="background:#e7f3ff; color:#1a73e8; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:bold;">${rowData.ops && rowData.ops.length ? rowData.ops.slice(-1) : '--'}</span></td>
-                    `;
-                    targetRow.classList.remove('fila-actualizada');
-                    void targetRow.offsetWidth; 
-                    targetRow.classList.add('fila-actualizada');
+                if (filtroEstadoActual !== 'TODOS') {
+                    hasStructuralChanges = true;
+                } else {
+                    const targetRow = document.getElementById(`row-${id}`);
+                    if (targetRow) {
+                        targetRow.innerHTML = generarCeldasFila(rowData);
+                        targetRow.classList.remove('fila-actualizada');
+                        void targetRow.offsetWidth; 
+                        targetRow.classList.add('fila-actualizada');
+                    }
                 }
             }
         });
@@ -372,14 +446,17 @@
 
         document.getElementById('operatorStats').innerHTML = Object.entries(opsMap)
             .sort((a, b) => b[1] - a[1])
-            .map(([n, c]) => `<div style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #f1f1f1; font-size:14px;"><span>👤 ${n}</span><b>${c} Items</b></div>`)
+            .map(([n, c]) => `<div onclick="setFiltroOperario('${n}')" title="Filtrar lecturas de ${n}" style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #f1f1f1; font-size:14px; cursor:pointer; background:${filtroOperarioActual === n ? '#e7f3ff' : 'transparent'}; border-radius:6px;"><span>👤 ${n}</span><b>${c} Items</b></div>`)
             .join('');
 
         if (fsData.length > 0) {
             document.getElementById('fsList').innerHTML = fsData.map(r => 
-                `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #f1f1f1;">
+                `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #f1f1f1;">
                     <b>${r.id}</b> 
-                    <span style="background:#ff9800; color:white; padding:3px 10px; border-radius:12px; font-weight:bold; font-size: 0.85em;">+${r.a}</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="background:#ff9800; color:white; padding:3px 10px; border-radius:12px; font-weight:bold; font-size: 0.85em;">+${r.a}</span>
+                        <button class="btn-del-item" onclick="eliminarFueraStock('${r.id}')" title="Eliminar definitivamente de Fuera de Stock">🗑️</button>
+                    </div>
                 </div>`
             ).join('');
         } else {
@@ -395,19 +472,24 @@
     function render(data) {
         document.getElementById('liveTable').innerHTML = data.map(r => `
             <tr id="row-${r.id}">
-                <td><b>${r.id}</b></td>
-                <td>${r.m} / <b>${r.a}</b></td>
-                <td style="color:${r.color}; font-weight:bold;">${r.est}</td>
-                <td><span style="background:#e7f3ff; color:#1a73e8; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:bold;">${r.ops && r.ops.length ? r.ops.slice(-1) : '--'}</span></td>
+                ${generarCeldasFila(r)}
             </tr>`).join('');
     }
 
     window.filtrar = () => {
         const v = document.getElementById('busqueda').value.toLowerCase();
-        let datosFiltrados = masterData.filter(d => d.id.toLowerCase().includes(v));
+        let datosFiltrados = masterData.filter(d => {
+            const opsTexto = d.ops && d.ops.length ? d.ops.join(' ').toLowerCase() : '';
+            const cumpleTexto = d.id.toLowerCase().includes(v) || opsTexto.includes(v);
+            const cumpleEstado = filtroEstadoActual === 'TODOS' || d.est === filtroEstadoActual;
+            return cumpleTexto && cumpleEstado;
+        });
 
         if (sortColumna) {
             datosFiltrados.sort((a, b) => {
+                if (sortColumna === 'a') {
+                    return sortAscendente ? (a.a - b.a) : (b.a - a.a);
+                }
                 let valA = a[sortColumna] || '';
                 let valB = b[sortColumna] || '';
                 
@@ -438,22 +520,23 @@
         if (confirm("⚠️ ¿DESEAS REINICIAR TODOS LOS CONTEOS?")) {
             const status = document.getElementById('loadingStatus');
             status.innerText = "⏳ Reiniciando conteos...";
-            const snap = await getDocs(collection(db, "pedidos"));
             let batch = writeBatch(db);
             let count = 0;
-            for (const d of snap.docs) {
-                const data = d.data();
-                
-                // Si el item fue agregado como Fuera de Stock, se elimina definitivamente
-                if (data.fs === true) {
-                    batch.delete(d.ref);
-                } else {
-                    // Si el item venía del Excel original, solo se vuelve a 0
-                    batch.update(d.ref, { a: 0, ops: [] }); 
+
+            for (const item of masterData) {
+                const refDoc = doc(db, "pedidos", item.id);
+                if (item.fs === true) {
+                    batch.delete(refDoc);
+                    count++;
+                } else if (item.a > 0 || (item.ops && item.ops.length > 0)) {
+                    batch.update(refDoc, { a: 0, ops: [] });
+                    count++;
                 }
-                
-                count++;
-                if (count >= 450) { await batch.commit(); batch = writeBatch(db); count = 0; }
+                if (count >= 450) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    count = 0;
+                }
             }
             if (count > 0) await batch.commit();
             status.innerText = "✅ Sistema reiniciado.";
@@ -476,9 +559,7 @@
             ["Fuera de Stock", 0] 
         ];
 
-        const snap = await getDocs(collection(db, "pedidos"));
-        snap.forEach(doc => {
-            const r = doc.data();
+        masterData.forEach(r => {
             const dif = r.a - r.m;
             let est = "";
             resumen[4][1]++; 
@@ -489,7 +570,7 @@
             else if (r.a === r.m) { est = "CUADRADO"; resumen[5][1]++; }
             else { est = "SOBRANTE"; resumen[7][1]++; }
 
-            detalle.push([doc.id, r.m, r.a, dif, est, r.ops ? r.ops.join(", ") : ""]);
+            detalle.push([r.id, r.m, r.a, dif, est, r.ops ? r.ops.join(", ") : ""]);
         });
 
         const wb = XLSX.utils.book_new();

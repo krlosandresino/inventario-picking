@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>👤 Operarios - Mermas</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         * { box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
@@ -65,7 +64,7 @@
         <input type="number" id="fsCantidad" placeholder="CANTIDAD" min="1">
         <div style="display:flex; gap:10px; margin-top:10px;">
             <button class="btn" style="background:#6c757d;" onclick="cerrarModalFS()">Cancelar</button>
-            <button class="btn" style="background:#28a745;" onclick="registrarFS()">Guardar</button>
+            <button class="btn" id="btnGuardarFS" style="background:#28a745;" onclick="registrarFS()">Guardar</button>
         </div>
     </div>
 </div>
@@ -121,12 +120,27 @@
 
     let baseLocal = {}, opNombre = "";
     let audioCtx;
+    let wakeLock = null;
+    let guardandoFS = false;
     const input = document.getElementById('scannerInput'), qInput = document.getElementById('quantityInput'), msg = document.getElementById('mensaje');
+
+    const solicitarWakeLock = async () => {
+        if ('wakeLock' in navigator) {
+            try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
+        }
+    };
+    document.addEventListener('visibilitychange', () => {
+        if (wakeLock !== null && document.visibilityState === 'visible') { solicitarWakeLock(); }
+    });
 
     let initLoad = true;
     onSnapshot(doc(db, "config", "reset"), () => { if(!initLoad) location.reload(); initLoad = false; });
 
     function emitirSonido(tipo) {
+        if (navigator.vibrate) {
+            if (tipo === 'ok') navigator.vibrate(50);
+            else navigator.vibrate([100, 50, 100]);
+        }
         if (!audioCtx) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const oscillator = audioCtx.createOscillator();
@@ -166,6 +180,7 @@
                 if (userData.pin === p && userData.accesos && userData.accesos.danados === true) {
                     opNombre = u;
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    solicitarWakeLock();
                     
                     document.getElementById('modalOp').style.display = 'none';
                     document.getElementById('appContenido').style.display = 'block';
@@ -206,11 +221,15 @@
 
     // LÓGICA DEL BOTÓN FUERA DE STOCK
     window.abrirModalFS = () => {
+        guardandoFS = false;
+        const btnFS = document.getElementById('btnGuardarFS');
+        if (btnFS) { btnFS.disabled = false; btnFS.innerText = "Guardar"; }
         document.getElementById('modalFS').style.display = 'flex';
         setTimeout(() => document.getElementById('fsCodigo').focus(), 100);
     };
 
     window.cerrarModalFS = () => {
+        guardandoFS = false;
         document.getElementById('modalFS').style.display = 'none';
         document.getElementById('fsCodigo').value = '';
         document.getElementById('fsCantidad').value = '';
@@ -228,29 +247,45 @@
     });
 
     window.registrarFS = async () => {
-        const cod = document.getElementById('fsCodigo').value.trim();
+        if (guardandoFS) return;
+        const cod = document.getElementById('fsCodigo').value.trim().toUpperCase();
         const cant = parseInt(document.getElementById('fsCantidad').value);
         
-        if(!cod || isNaN(cant) || cant <= 0) return alert("Ingrese un código y una cantidad válida.");
-        
-        const itemRef = doc(db, "pedidos", cod);
-        
-        if(baseLocal[cod]) {
-            updateDoc(itemRef, { a: increment(cant), ops: arrayUnion(opNombre) });
-        } else {
-            setDoc(itemRef, { m: 0, a: cant, ops: [opNombre], fs: true });
+        if(!cod || isNaN(cant) || cant <= 0) {
+            emitirSonido('error');
+            return alert("Ingrese un código y una cantidad válida.");
         }
         
-        emitirSonido('ok');
-        msg.innerText = `Fuera de stock registrado: ${cod} (+${cant})`;
-        msg.className = "warning";
+        guardandoFS = true;
+        const btnFS = document.getElementById('btnGuardarFS');
+        if (btnFS) { btnFS.disabled = true; btnFS.innerText = "Guardando..."; }
+
+        const itemRef = doc(db, "pedidos", cod);
         
-        cerrarModalFS();
+        try {
+            if(baseLocal[cod]) {
+                await updateDoc(itemRef, { a: increment(cant), ops: arrayUnion(opNombre) });
+            } else {
+                await setDoc(itemRef, { m: 0, a: cant, ops: [opNombre], fs: true });
+            }
+            
+            emitirSonido('ok');
+            msg.innerText = `Fuera de stock registrado: ${cod} (+${cant})`;
+            msg.className = "warning";
+            
+            cerrarModalFS();
+        } catch (err) {
+            guardandoFS = false;
+            if (btnFS) { btnFS.disabled = false; btnFS.innerText = "Guardar"; }
+            emitirSonido('error');
+            alert("Error al guardar. Verifique su conexión.");
+        }
     };
 
     onSnapshot(collection(db, "pedidos"), (snap) => {
         document.getElementById('totalSkus').innerText = "📦 Total SKUs: " + snap.size;
         
+        baseLocal = {};
         snap.forEach(doc => {
             baseLocal[doc.id] = doc.data();
         });
@@ -276,7 +311,7 @@
 
             emitirSonido('ok');
 
-            msg.innerText = `Procesado: ${cod}`;
+            msg.innerText = `Procesado: ${cod} (+${cant})`;
             msg.className = cl;
             
             updateDoc(doc(db, "pedidos", cod), { a: increment(cant), ops: arrayUnion(opNombre) });
