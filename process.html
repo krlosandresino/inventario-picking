@@ -455,8 +455,8 @@
 
                 let claseSelect = 'select-cruce-auto';
                 if (item.estadoManual !== 'AUTO') {
-                    if (item.estadoManual === 'Justificado' || item.estadoManual === 'Revisado OK') claseSelect = 'select-cruce-ok';
-                    else if (item.estadoManual === 'Parcial' || item.estadoManual === 'En Análisis') claseSelect = 'select-cruce-warn';
+                    if (item.estadoManual === 'Justificado') claseSelect = 'select-cruce-ok';
+                    else if (item.estadoManual === 'Análisis') claseSelect = 'select-cruce-warn';
                     else if (item.estadoManual === 'No Justifica') claseSelect = 'select-cruce-danger';
                 } else {
                     if (item.cruceNeto >= 0 && item.difVigente > 0) claseSelect = 'select-cruce-ok';
@@ -479,10 +479,8 @@
                                 <select class="select-cruce ${claseSelect}" onchange="cambiarEstadoManual('${item.cod}', this.value)">
                                     <option value="AUTO" ${item.estadoManual === 'AUTO' ? 'selected' : ''}>⚡ Auto: ${item.estadoAutoTexto}</option>
                                     <option value="Justificado" ${item.estadoManual === 'Justificado' ? 'selected' : ''}>✅ Justificado</option>
-                                    <option value="Parcial" ${item.estadoManual === 'Parcial' ? 'selected' : ''}>⚠️ Parcial</option>
                                     <option value="No Justifica" ${item.estadoManual === 'No Justifica' ? 'selected' : ''}>❌ No Justifica</option>
-                                    <option value="En Análisis" ${item.estadoManual === 'En Análisis' ? 'selected' : ''}>🔍 En Análisis</option>
-                                    <option value="Revisado OK" ${item.estadoManual === 'Revisado OK' ? 'selected' : ''}>✔️ Revisado OK</option>
+                                    <option value="Análisis" ${item.estadoManual === 'Análisis' ? 'selected' : ''}>🔍 Análisis</option>
                                 </select>
                             </div>
                         </td>
