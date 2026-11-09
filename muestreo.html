@@ -52,6 +52,8 @@
         let mapRegistrosPorCodigo = new Map();
         
         let auditoriaGlobal = {};
+        let audioCtxGlobal = null;
+        let unsubscribeSesionActiva = null;
 
         // --- VARIABLES PARA RENDERIZADO PARCIAL (LAZY LOADING) ---
         let listaFiltradaOp = [];
@@ -89,30 +91,35 @@
                 else { navigator.vibrate([100, 50, 100]); }
             }
             try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+                if (!audioCtxGlobal) {
+                    audioCtxGlobal = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtxGlobal.state === 'suspended') {
+                    audioCtxGlobal.resume();
+                }
+                const osc = audioCtxGlobal.createOscillator();
+                const gain = audioCtxGlobal.createGain();
                 osc.connect(gain);
-                gain.connect(audioCtx.destination);
+                gain.connect(audioCtxGlobal.destination);
                 if (tipo === 'ok') {
                     osc.type = 'sine';
-                    osc.frequency.setValueAtTime(987.77, audioCtx.currentTime);
-                    osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08);
-                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
-                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.1);
-                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                    osc.frequency.setValueAtTime(987.77, audioCtxGlobal.currentTime);
+                    osc.frequency.setValueAtTime(1318.51, audioCtxGlobal.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0, audioCtxGlobal.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtxGlobal.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtxGlobal.currentTime + 0.1);
+                    gain.gain.linearRampToValueAtTime(0, audioCtxGlobal.currentTime + 0.2);
                     osc.start();
-                    osc.stop(audioCtx.currentTime + 0.2);
+                    osc.stop(audioCtxGlobal.currentTime + 0.2);
                 } else {
                     osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.25);
-                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-                    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
-                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.25);
+                    osc.frequency.setValueAtTime(300, audioCtxGlobal.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(150, audioCtxGlobal.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0, audioCtxGlobal.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtxGlobal.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0, audioCtxGlobal.currentTime + 0.25);
                     osc.start();
-                    osc.stop(audioCtx.currentTime + 0.25);
+                    osc.stop(audioCtxGlobal.currentTime + 0.25);
                 }
             } catch(e) { console.log("Audio no soportado"); }
         };
@@ -189,9 +196,26 @@
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
                         
-                        // REGISTRAR USUARIO ACTIVO Y CONFIGURAR DESCONEXIÓN USANDO dbAuth
+                        // REGISTRAR USUARIO ACTIVO, ESCUCHAR CIERRE REMOTO Y CONFIGURAR DESCONEXIÓN USANDO dbAuth
                         const refActivo = ref(dbAuth, 'usuarios_activos/' + usuarioActual);
-                        set(refActivo, true);
+                        set(refActivo, true).then(() => {
+                            if (unsubscribeSesionActiva) unsubscribeSesionActiva();
+                            unsubscribeSesionActiva = onValue(refActivo, (snapActivo) => {
+                                if (!snapActivo.exists() && usuarioActual !== "") {
+                                    if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
+                                    usuarioActual = "";
+                                    document.getElementById('userOp').value = "";
+                                    document.getElementById('pinOp').value = "";
+                                    document.getElementById('displayUsuario').innerText = "👤 Op: -";
+                                    document.getElementById('loginOverlayOp').style.display = 'flex';
+                                    if (wakeLock !== null) {
+                                        try { wakeLock.release().then(() => { wakeLock = null; }); } catch (err) {}
+                                    }
+                                    alert("Tu sesión ha sido cerrada por el administrador.");
+                                    document.getElementById('userOp').focus();
+                                }
+                            });
+                        });
                         onDisconnect(refActivo).remove();
                         
                         iniciarMonitoreoBateria(usuarioActual);
@@ -211,12 +235,15 @@
 
         window.cerrarSesion = () => {
             if (confirm("¿Estás seguro de que deseas cerrar sesión?")) {
+                if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
+                const userSaliente = usuarioActual;
+                usuarioActual = "";
+
                 // ELIMINAR SESIÓN ACTIVA MANUALMENTE AL SALIR
-                if (usuarioActual) {
-                    remove(ref(dbAuth, 'usuarios_activos/' + usuarioActual));
+                if (userSaliente) {
+                    remove(ref(dbAuth, 'usuarios_activos/' + userSaliente));
                 }
                 
-                usuarioActual = "";
                 document.getElementById('userOp').value = "";
                 document.getElementById('pinOp').value = "";
                 document.getElementById('displayUsuario').innerText = "👤 Op: -";
@@ -249,23 +276,12 @@
             document.getElementById('textoAvance').innerText = `Avance: ${porcentaje}% (${avance}/${totalMaestro} SKUs)`;
         }
 
-        // --- LÓGICA DE ESCUCHA DE AUDITORÍA ---
+        // --- LÓGICA DE ESCUCHA DE AUDITORÍA (PRIORIZA AL PRINCIPIO DE LA LISTA) ---
         onValue(ref(db, 'auditoria'), (snap) => {
             auditoriaGlobal = snap.val() || {};
-            const tarjetas = document.querySelectorAll('.rc-wrapper');
-            
-            tarjetas.forEach(tarjeta => {
-                const cod = tarjeta.id.replace('card_', '');
-                const badgeEl = tarjeta.querySelector('.badge-auditoria');
-                
-                if (auditoriaGlobal[cod]) {
-                    tarjeta.classList.add('rc-auditoria');
-                    if(badgeEl) badgeEl.style.display = 'inline-block';
-                } else {
-                    tarjeta.classList.remove('rc-auditoria');
-                    if(badgeEl) badgeEl.style.display = 'none';
-                }
-            });
+            if (inventarioMaestro.length > 0) {
+                window.aplicarFiltroYRenderizar();
+            }
         });
 
         onValue(dbRefMaestro, (snapshot) => {
@@ -322,7 +338,7 @@
             }
         });
 
-        // --- FILTRADO EN MEMORIA Y RENDERIZADO PARCIAL ---
+        // --- FILTRADO EN MEMORIA, PRIORIDAD DE RECONTEO Y RENDERIZADO PARCIAL ---
         window.aplicarFiltroYRenderizar = () => {
             const filtro = document.getElementById('buscadorCodigo').value;
             listaFiltradaOp = inventarioMaestro.filter(item => {
@@ -330,6 +346,13 @@
                 if (codigosContadosGlobal.has(codStr)) return false; 
                 if (filtro && !codStr.includes(filtro)) return false; 
                 return true;
+            });
+
+            listaFiltradaOp.sort((a, b) => {
+                const audA = auditoriaGlobal[a.cod] ? 1 : 0;
+                const audB = auditoriaGlobal[b.cod] ? 1 : 0;
+                if (audA !== audB) return audB - audA;
+                return (a.pos || '').toString().localeCompare((b.pos || '').toString());
             });
             
             document.getElementById('listaMaestro').innerHTML = "";

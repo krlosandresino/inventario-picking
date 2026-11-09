@@ -25,6 +25,8 @@
         const dbRefUsuarios = ref(db, 'usuarios_auth');
         const dbRefActivos = ref(db, 'usuarios_activos'); 
 
+        let usuariosCache = {};
+
         window.crearUsuario = () => {
             const user = document.getElementById('nuevoUsuario').value.trim().toUpperCase();
             const pin = document.getElementById('nuevoPin').value.trim();
@@ -49,7 +51,7 @@
                     danados: chkDanados // SE GUARDA EL NUEVO PERMISO
                 }
             }).then(() => {
-                alert("Usuario " + user + " creado exitosamente.");
+                alert("Usuario " + user + " guardado exitosamente.");
                 document.getElementById('nuevoUsuario').value = "";
                 document.getElementById('nuevoPin').value = "";
                 document.getElementById('chkPicking').checked = false;
@@ -59,6 +61,22 @@
                 document.getElementById('chkDanados').checked = false;
                 document.getElementById('nuevoUsuario').focus();
             }).catch(e => alert("Error al crear usuario: " + e));
+        };
+
+        window.editarUsuario = (user) => {
+            const info = usuariosCache[user];
+            if (!info) return;
+
+            document.getElementById('nuevoUsuario').value = user;
+            document.getElementById('nuevoPin').value = info.pin || "";
+            document.getElementById('chkPicking').checked = !!(info.accesos && info.accesos.picking);
+            document.getElementById('chkMuestreo').checked = !!(info.accesos && info.accesos.muestreo);
+            document.getElementById('chkReconteo').checked = !!(info.accesos && info.accesos.reconteo);
+            document.getElementById('chkBuscador').checked = !!(info.accesos && info.accesos.buscador);
+            document.getElementById('chkDanados').checked = !!(info.accesos && info.accesos.danados);
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            document.getElementById('nuevoPin').focus();
         };
 
         window.eliminarUsuario = (user) => {
@@ -110,53 +128,62 @@
             }
         };
 
-        onValue(dbRefUsuarios, (snapshot) => {
-            const data = snapshot.val();
+        window.renderTablaUsuarios = () => {
             const tabla = document.getElementById('cuerpoUsuarios');
-            tabla.innerHTML = "";
-            let total = 0;
-            
-            if (data) {
-                total = Object.keys(data).length;
-                
-                Object.keys(data).forEach(user => {
-                    const info = data[user];
-                    
-                    const accesosText = [
-                        info.accesos?.picking ? "Picking" : "",
-                        info.accesos?.muestreo ? "Muestreo" : "",
-                        info.accesos?.reconteo ? "Reconteo" : "",
-                        info.accesos?.buscador ? "Buscador" : "",
-                        info.accesos?.danados ? "Dañados" : "" // SE MUESTRA EL NUEVO PERMISO
-                    ].filter(Boolean).join(", ") || "Ninguno";
+            const inputFiltro = document.getElementById('buscarUsuarioReg');
+            const filtro = inputFiltro ? inputFiltro.value.trim().toUpperCase() : "";
+            const keys = Object.keys(usuariosCache);
 
-                    tabla.innerHTML += `
-                        <tr>
-                            <td style="font-weight:bold;">${user}</td>
-                            <td>${info.pin}</td>
-                            <td style="font-size:0.75rem; color:#666;">${accesosText}</td>
-                            <td style="text-align:center;">
-                                <button style="border:none; background:none; cursor:pointer;" onclick="eliminarUsuario('${user}')">🗑️</button>
-                            </td>
-                        </tr>
-                    `;
-                });
-            }
-            
-            document.getElementById('totalUsuarios').innerText = `(${total})`;
+            document.getElementById('totalUsuarios').innerText = `(${keys.length})`;
+
+            let html = "";
+            keys.forEach(user => {
+                const info = usuariosCache[user];
+                const accesosText = [
+                    info.accesos?.picking ? "Picking" : "",
+                    info.accesos?.muestreo ? "Muestreo" : "",
+                    info.accesos?.reconteo ? "Reconteo" : "",
+                    info.accesos?.buscador ? "Buscador" : "",
+                    info.accesos?.danados ? "Dañados" : ""
+                ].filter(Boolean).join(", ") || "Ninguno";
+
+                if (filtro && !user.includes(filtro) && !accesosText.toUpperCase().includes(filtro)) {
+                    return;
+                }
+
+                html += `
+                    <tr>
+                        <td style="font-weight:bold;">${user}</td>
+                        <td>${info.pin}</td>
+                        <td style="font-size:0.75rem; color:#666;">${accesosText}</td>
+                        <td style="text-align:center; white-space:nowrap;">
+                            <button style="border:none; background:none; cursor:pointer; margin-right:6px;" onclick="editarUsuario('${user}')" title="Editar permisos o PIN">✏️</button>
+                            <button style="border:none; background:none; cursor:pointer;" onclick="eliminarUsuario('${user}')" title="Eliminar usuario">🗑️</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tabla.innerHTML = html;
+        };
+
+        onValue(dbRefUsuarios, (snapshot) => {
+            usuariosCache = snapshot.val() || {};
+            window.renderTablaUsuarios();
         });
 
         onValue(dbRefActivos, (snapshot) => {
             const data = snapshot.val();
             const tabla = document.getElementById('cuerpoActivos');
-            tabla.innerHTML = "";
+            let html = "";
             let total = 0;
             
             if (data) {
-                total = Object.keys(data).length;
+                const keys = Object.keys(data);
+                total = keys.length;
                 
-                Object.keys(data).forEach(user => {
-                    tabla.innerHTML += `
+                keys.forEach(user => {
+                    html += `
                         <tr>
                             <td style="font-weight:bold; color: #2e7d32;">🟢 ${user}</td>
                             <td style="text-align:center;">
@@ -167,6 +194,7 @@
                 });
             }
             
+            tabla.innerHTML = html;
             document.getElementById('totalActivos').innerText = `(${total})`;
         });
     </script>
@@ -228,13 +256,14 @@
         
         <!-- Pestaña 1: Usuarios Registrados -->
         <div id="panelRegistrados" style="padding: 20px;">
+            <input type="text" id="buscarUsuarioReg" placeholder="🔍 Buscar usuario o permiso..." autocomplete="off" oninput="renderTablaUsuarios()" style="margin-top: 0; margin-bottom: 10px; padding: 10px; font-size: 0.9rem;">
             <table style="margin-top: 0;">
                 <thead>
                     <tr>
                         <th>Usuario</th>
                         <th>PIN</th>
                         <th>Accesos</th>
-                        <th>Acción</th>
+                        <th style="text-align:center;">Acción</th>
                     </tr>
                 </thead>
                 <tbody id="cuerpoUsuarios"></tbody>

@@ -227,14 +227,11 @@
 
         window.solicitarReconteo = async (codigo) => {
             if(confirm(`¿Deseas enviar a RECONTAR el código ${codigo}?`)) {
-                const snap = await get(dbRefRegistros);
-                const registros = snap.val() || {};
                 const updates = {};
-                
                 updates[`auditoria/${codigo}`] = true;
                 
-                for (const key in registros) {
-                    if (String(registros[key].cod) === String(codigo)) {
+                for (const key in registrosGlobales) {
+                    if (String(registrosGlobales[key].cod) === String(codigo)) {
                         updates[`registros/${key}`] = null;
                     }
                 }
@@ -246,17 +243,17 @@
 
         window.eliminarRegistroIndividual = async (codigo) => {
             if(confirm(`¿Deseas eliminar los registros del código ${codigo} para que lo vuelvan a ingresar?`)) {
-                const snap = await get(dbRefRegistros);
-                const registros = snap.val() || {};
                 const updates = {};
                 
-                for (const key in registros) {
-                    if (String(registros[key].cod) === String(codigo)) {
+                for (const key in registrosGlobales) {
+                    if (String(registrosGlobales[key].cod) === String(codigo)) {
                         updates[`registros/${key}`] = null;
                     }
                 }
                 
-                await update(ref(db), updates);
+                if (Object.keys(updates).length > 0) {
+                    await update(ref(db), updates);
+                }
                 alert(`Registros del código ${codigo} eliminados.`);
             }
         };
@@ -279,13 +276,10 @@
         };
 
         window.exportarExcelTotal = async () => {
-            const snapInv = await get(dbRefRegistros);
             const wb = XLSX.utils.book_new();
-            
-            const registros = snapInv.val() || {};
             const agrupados = {};
             
-            Object.values(registros).forEach(i => {
+            Object.values(registrosGlobales).forEach(i => {
                 if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
                 agrupados[i.cod].cant += parseFloat(i.cant || 0);
                 agrupados[i.cod].listaUsuarios.add(i.usuario);
@@ -357,8 +351,10 @@
 
         window.borrarHistorial = async () => {
             if(confirm("¿DESEAS BORRAR TODA LA INFORMACION?")) {
-                await remove(dbRefRegistros);
-                await remove(ref(db, 'auditoria')); 
+                await Promise.all([
+                    remove(dbRefRegistros),
+                    remove(ref(db, 'auditoria'))
+                ]);
                 alert("Datos limpiados correctamente.");
             }
         };
@@ -444,18 +440,20 @@
                 const teo = parseFloat(reg.teorico || 0);
                 const fis = reg.cant;
                 const dif = fis - teo;
-                
-                if (dif === 0) contCuadrados++;
-                else if (dif < 0) contFaltantes++;
-                else if (dif > 0) contSobrantes++;
+
+                const textoFila = `${Array.from(reg.usuarios).join(', ')} ${reg.cod} ${reg.pos}`.toLowerCase();
+                const cumpleBusqueda = textoFila.includes(term);
+
+                if (cumpleBusqueda) {
+                    if (dif === 0) contCuadrados++;
+                    else if (dif < 0) contFaltantes++;
+                    else if (dif > 0) contSobrantes++;
+                }
 
                 let cumpleEstado = true;
                 if (filtroEstadoGlobal === 'cuadrados' && dif !== 0) cumpleEstado = false;
                 if (filtroEstadoGlobal === 'faltantes' && dif >= 0) cumpleEstado = false;
                 if (filtroEstadoGlobal === 'sobrantes' && dif <= 0) cumpleEstado = false;
-
-                const textoFila = `${Array.from(reg.usuarios).join(', ')} ${reg.cod} ${reg.pos}`.toLowerCase();
-                const cumpleBusqueda = textoFila.includes(term);
 
                 return cumpleEstado && cumpleBusqueda;
             });
@@ -507,18 +505,26 @@
                     </tr>`;
             }).join('');
 
-            document.getElementById('bodyMonitor').insertAdjacentHTML('beforeend', html);
+            const fragment = document.createDocumentFragment();
+            const tempDiv = document.createElement('tbody');
+            tempDiv.innerHTML = html;
+            while (tempDiv.firstChild) {
+                fragment.appendChild(tempDiv.firstChild);
+            }
+            document.getElementById('bodyMonitor').appendChild(fragment);
             itemsCargados += itemsPorPagina;
         }
 
         setTimeout(() => {
             const scrollContainers = document.querySelectorAll('.scroll');
-            if(scrollContainers.length > 0) {
-                scrollContainers[0].addEventListener('scroll', function() {
-                    if (this.scrollTop + this.clientHeight >= this.scrollHeight - 20) {
+            const sentinel = document.getElementById('sentinelaMuestreo');
+            if(scrollContainers.length > 0 && sentinel) {
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting) {
                         renderizarSiguientePagina();
                     }
-                });
+                }, { root: scrollContainers[0], rootMargin: '100px' });
+                observer.observe(sentinel);
             }
         }, 300);
 
@@ -619,7 +625,7 @@
                 ? lista.map(p => `
                     <tr>
                         <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:var(--primary); font-weight:bold; user-select: text; cursor: text;" title="Seleccionar código">${p.cod}</td>
-                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; font-size:0.85rem;">${p.nom || '---'}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f0f0f0; font-size:0.85rem; user-select: text; cursor: text;">${p.nom || '---'}</td>
                         <td style="padding:12px; border-bottom:1px solid #f0f0f0; color:#555; text-align:center; white-space:nowrap; user-select: text; cursor: text;" title="Seleccionar ubicación"><b>${p.pos || '---'}</b></td>
                     </tr>
                 `).join('')
@@ -663,6 +669,7 @@
         table { width: 100%; border-collapse: collapse; }
         th { position: sticky; top: 0; background: #f9fafb; padding: 15px; text-align: left; color: #777; border-bottom: 2px solid #eee; font-size: 0.8rem; }
         td { padding: 15px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
+        #bodyMonitor td, #bodyMonitor span, #bodyMonitor b, #bodyPendientes td, #bodyPendientes b { user-select: text; -webkit-user-select: text; cursor: text; }
         .user-pill { background: #eef2ff; color: var(--primary); padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 0.75rem; }
         .btn-blue { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 0.85rem; transition: transform 0.1s ease; }
         .btn-blue:active { transform: scale(0.95); }
@@ -775,6 +782,7 @@
                     </thead>
                     <tbody id="bodyMonitor"></tbody>
                 </table>
+                <div id="sentinelaMuestreo" style="height: 1px;"></div>
             </div>
         </div>
 
@@ -866,7 +874,11 @@
     document.getElementById('userLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') document.getElementById('passLog').focus(); });
     document.getElementById('passLog').addEventListener('keydown', (e) => { if(e.key === 'Enter') validarAcceso(); });
 
-    document.addEventListener('contextmenu', event => event.preventDefault());
+    document.addEventListener('contextmenu', event => {
+        if (!event.target.closest('#bodyMonitor') && !event.target.closest('#bodyPendientes')) {
+            event.preventDefault();
+        }
+    });
     document.addEventListener('keydown', function(e) {
         if (e.keyCode === 123) { e.preventDefault(); return false; }
         if (e.ctrlKey && e.keyCode === 85) { e.preventDefault(); return false; }
