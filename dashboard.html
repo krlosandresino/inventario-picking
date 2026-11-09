@@ -33,14 +33,32 @@
         let rawDataMaestro = {};
         let rawDataRegistros = {};
         let rawDataReconteo = {};
+
+        // Caché del Maestro y Zonas para no reconstruirlo en cada escaneo
+        let cachedDataMaestro = {};
+        let cachedZonasTotales = {};
+        let maestroDirty = true;
         
         let totalMaestro = 0;
+
+        // WakeLock para evitar que la TV o monitor apague la pantalla
+        let wakeLock = null;
+        const solicitarWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+            }
+        };
+        solicitarWakeLock();
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') solicitarWakeLock();
+        });
         
         // --- SISTEMA DE OPTIMIZACIÓN (DEBOUNCE Y MODO SUSPENSIÓN) ---
         let needsRender = false; 
         let lastActivityTime = Date.now();
         const IDLE_LIMIT = 5 * 60 * 1000; // 5 minutos en milisegundos
         let isIdle = false;
+        let scrollResumers = [];
 
         function registrarActividad() {
             lastActivityTime = Date.now();
@@ -48,6 +66,7 @@
             if (isIdle) {
                 isIdle = false;
                 document.body.classList.remove('idle-active');
+                scrollResumers.forEach(resumeFn => resumeFn());
             }
         }
 
@@ -76,14 +95,17 @@
         // Listeners de Firebase optimizados para red y memoria
         onChildAdded(dbRefMaestro, snap => {
             rawDataMaestro[snap.key] = snap.val();
+            maestroDirty = true;
             registrarActividad();
         });
         onChildChanged(dbRefMaestro, snap => {
             rawDataMaestro[snap.key] = snap.val();
+            maestroDirty = true;
             registrarActividad();
         });
         onChildRemoved(dbRefMaestro, snap => {
             delete rawDataMaestro[snap.key];
+            maestroDirty = true;
             registrarActividad();
         });
 
@@ -115,11 +137,25 @@
 
         // Función Principal Unificada de Renderizado
         function renderizarDashboard() {
-            // Cargar Maestro iterando sobre el objeto incremental
-            let dataMaestro = {};
-            Object.values(rawDataMaestro).forEach(i => { if(i && i.cod) dataMaestro[i.cod] = i; });
-            totalMaestro = Object.keys(dataMaestro).length;
-            document.getElementById('kpi-total').innerText = totalMaestro;
+            // Reconstruir Maestro y base de Zonas únicamente si hubo cambios en el nodo maestro
+            if (maestroDirty) {
+                cachedDataMaestro = {};
+                cachedZonasTotales = {};
+                Object.values(rawDataMaestro).forEach(i => {
+                    if (i && i.cod) {
+                        cachedDataMaestro[i.cod] = i;
+                        let pos = i.pos || '';
+                        let zona = pos.trim().charAt(0).toUpperCase(); 
+                        if (!zona.match(/[A-Z0-9]/)) zona = 'OTRO';
+                        cachedZonasTotales[zona] = (cachedZonasTotales[zona] || 0) + 1;
+                    }
+                });
+                totalMaestro = Object.keys(cachedDataMaestro).length;
+                document.getElementById('kpi-total').innerText = totalMaestro;
+                maestroDirty = false;
+            }
+
+            let dataMaestro = cachedDataMaestro;
 
             // Variables de cálculo
             let agrupados = {};
@@ -128,14 +164,9 @@
             let ultimosRegistros = [];
             let statsZonas = {};
 
-            // Inicializar Zonas
-            for (let cod in dataMaestro) {
-                let pos = dataMaestro[cod].pos || '';
-                let zona = pos.trim().charAt(0).toUpperCase(); 
-                if (!zona.match(/[A-Z0-9]/)) zona = 'OTRO';
-                
-                if (!statsZonas[zona]) statsZonas[zona] = { total: 0, procesados: 0 };
-                statsZonas[zona].total++;
+            // Inicializar Zonas desde la caché
+            for (let zona in cachedZonasTotales) {
+                statsZonas[zona] = { total: cachedZonasTotales[zona], procesados: 0 };
             }
 
             // Procesar 1er Conteo
@@ -247,11 +278,11 @@
                 `).join('')
                 : '<div style="color:#aaa; text-align:center;">Esperando datos...</div>';
 
-            // Feed 1er Conteo
+            // Feed 1er Conteo (fade-in solo en el primer item nuevo)
             const feed = ultimosRegistros.reverse().slice(0, 20);
             document.getElementById('feed-vivo').innerHTML = feed.length > 0
-                ? feed.map(f => `
-                    <div class="feed-item fade-in">
+                ? feed.map((f, idx) => `
+                    <div class="feed-item ${idx === 0 ? 'fade-in' : ''}">
                         <div>
                             <span class="feed-user">${f.usuario}</span>
                             <br><span class="feed-cod">${f.cod}</span>
@@ -261,11 +292,11 @@
                 `).join('')
                 : '<div style="color:#aaa; text-align:center;">Sin actividad reciente...</div>';
                 
-            // Reconteo Auditoría
+            // Reconteo Auditoría (fade-in solo en el primer item nuevo)
             const ultimosReconteos = Object.values(rawDataReconteo).reverse().slice(0, 20);
             document.getElementById('reconteo-vivo').innerHTML = ultimosReconteos.length > 0
-                ? ultimosReconteos.map(r => `
-                    <div class="reconteo-item fade-in">
+                ? ultimosReconteos.map((r, idx) => `
+                    <div class="reconteo-item ${idx === 0 ? 'fade-in' : ''}">
                         <div>
                             <span style="color:var(--purple); font-weight:bold;">${r.usuario}</span>
                             <br><span class="feed-cod">${r.cod}</span>
@@ -293,13 +324,14 @@
             }
         }
 
-        // --- SISTEMA DE AUTO-SCROLL INTELIGENTE (Optimizado con requestAnimationFrame) ---
+        // --- SISTEMA DE AUTO-SCROLL INTELIGENTE (Se detiene por completo en Modo Suspensión) ---
         function iniciarAutoScroll(elementId, velocidad) {
             const el = document.getElementById(elementId);
             if(!el) return;
             
             let isHovered = false;
             let timeoutReset;
+            let animId = null;
 
             el.addEventListener('mouseenter', () => isHovered = true);
             el.addEventListener('mouseleave', () => isHovered = false);
@@ -307,7 +339,11 @@
             el.addEventListener('touchend', () => { setTimeout(() => isHovered = false, 1000); }, { passive: true });
 
             function scrollStep() {
-                if (!isHovered && el.scrollHeight > el.clientHeight && !isIdle) {
+                if (isIdle) {
+                    animId = null;
+                    return;
+                }
+                if (!isHovered && el.scrollHeight > el.clientHeight) {
                     el.scrollTop += velocidad;
                     
                     if (Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight) {
@@ -319,10 +355,16 @@
                         }, 2000);
                     }
                 }
-                requestAnimationFrame(scrollStep);
+                animId = requestAnimationFrame(scrollStep);
             }
             
-            requestAnimationFrame(scrollStep);
+            scrollResumers.push(() => {
+                if (!animId && !isIdle) {
+                    animId = requestAnimationFrame(scrollStep);
+                }
+            });
+
+            animId = requestAnimationFrame(scrollStep);
         }
 
         setTimeout(() => {

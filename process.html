@@ -51,9 +51,8 @@
         const itemsPorPagina = 50;
 
         window.validarAcceso = () => {
-            const user = document.getElementById('userLog').value.trim().toLowerCase();
             const pass = document.getElementById('passLog').value.trim();
-            if (user === "oriflame" && pass === "2026") {
+            if (pass === "2026") {
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('processMain').style.display = 'block';
             } else {
@@ -68,6 +67,34 @@
             }, 200);
         }
 
+        function obtenerClaseSelect(item) {
+            if (item.estadoManual !== 'AUTO') {
+                if (item.estadoManual === 'Justificado') return 'select-cruce-ok';
+                if (item.estadoManual === 'Análisis') return 'select-cruce-warn';
+                if (item.estadoManual === 'No Justifica') return 'select-cruce-danger';
+            } else {
+                if (item.cruceNeto >= 0 && item.difVigente > 0) return 'select-cruce-ok';
+                if (item.difVigente > 0 && item.cruceNeto < 0) return 'select-cruce-warn';
+                return 'select-cruce-danger';
+            }
+            return 'select-cruce-auto';
+        }
+
+        function actualizarContadoresRevisionManual() {
+            let cJust = 0, cNoJust = 0, cAnal = 0;
+            listaCruzadaGlobal.forEach(item => {
+                if (item.estadoManual === 'Justificado') cJust++;
+                else if (item.estadoManual === 'No Justifica') cNoJust++;
+                else if (item.estadoManual === 'Análisis') cAnal++;
+            });
+            const elJ = document.getElementById('mcJustificado');
+            const elNJ = document.getElementById('mcNoJustifica');
+            const elA = document.getElementById('mcAnalisis');
+            if (elJ) elJ.innerText = cJust;
+            if (elNJ) elNJ.innerText = cNoJust;
+            if (elA) elA.innerText = cAnal;
+        }
+
         // 1. Escuchar base exclusiva de Process
         onValue(dbRefProcess, (snapshot) => {
             const val = snapshot.val();
@@ -75,10 +102,27 @@
             triggerCruceDatos();
         });
 
-        // 1.1 Escuchar estados manuales de análisis en Process
+        // 1.1 Escuchar estados manuales de análisis en Process (Actualiza en vivo sin perder el scroll)
         onValue(dbRefProcessManual, (snapshot) => {
             mapEstadosManuales = snapshot.val() || {};
-            triggerCruceDatos();
+            if (listaCruzadaGlobal.length > 0) {
+                listaCruzadaGlobal.forEach(item => {
+                    const nuevoManual = mapEstadosManuales[item.cod] || "AUTO";
+                    item.estadoManual = nuevoManual;
+                    item.estadoFinalReporte = nuevoManual === "AUTO" ? `Auto: ${item.estadoAutoTexto}` : `Manual: ${nuevoManual}`;
+                    const selEl = document.getElementById(`sel-cruce-${item.cod}`);
+                    if (selEl) {
+                        selEl.value = nuevoManual;
+                        selEl.className = `select-cruce ${obtenerClaseSelect(item)}`;
+                    }
+                });
+                actualizarContadoresRevisionManual();
+                if (filtroEstadoProcess === 'Justificado' || filtroEstadoProcess === 'No Justifica' || filtroEstadoProcess === 'Análisis') {
+                    ejecutarFiltro(true);
+                }
+            } else {
+                triggerCruceDatos();
+            }
         });
 
         // 2. Escuchar Maestro de Admin (Stock y Ubicación)
@@ -273,6 +317,7 @@
                 // Encontrados (Admin - 1er Conteo)
                 const fueContado1 = infoConteo1 !== undefined;
                 const encontrados = fueContado1 ? infoConteo1.cant : 0;
+                const ops1 = (fueContado1 && infoConteo1.usuarios) ? Array.from(infoConteo1.usuarios).join(', ') : '';
                 const dif1 = encontrados - stock;
 
                 // Omitir si Stock (Admin) ya cuadra con Encontrados (Admin)
@@ -283,6 +328,7 @@
                 // Reconteo Final (Admin Reconteo)
                 const fueContado2 = infoReconteo !== undefined;
                 const reconteoFinal = fueContado2 ? infoReconteo.cant : "-";
+                const ops2 = (fueContado2 && infoReconteo.usuarios) ? Array.from(infoReconteo.usuarios).join(', ') : '';
 
                 // Diferencia vigente en Picking para seguimiento
                 const difVigente = fueContado2 ? (reconteoFinal - stock) : dif1;
@@ -302,18 +348,14 @@
                 }
 
                 // Cálculo de Cruce Neto: Cant. Process es negativo (en contra), por lo tanto se resta a difVigente
-                // Si difVigente es +158 y Process es 160 -> +158 - 160 = -2
-                // Si difVigente es -578 y Process es 3   -> -578 - 3 = -581
                 const cruceNeto = difVigente - cantProcess;
                 let estadoAutoTexto = "";
 
                 if (cruceNeto === 0) {
                     estadoAutoTexto = "Cubierto (0)";
                 } else if (difVigente > 0) {
-                    // El sobrante positivo consume la pérdida de Process
                     estadoAutoTexto = cruceNeto > 0 ? `Cubre (+${cruceNeto})` : `Falta Cubrir (${cruceNeto})`;
                 } else {
-                    // Faltante negativo en Picking + pérdida negativa en Process se acumulan
                     estadoAutoTexto = `Faltante (${cruceNeto})`;
                 }
 
@@ -330,9 +372,11 @@
                     cantProcess,
                     stock,
                     encontrados,
+                    ops1,
                     fueContado1,
                     dif1,
                     reconteoFinal,
+                    ops2,
                     difVigente,
                     cruceNeto,
                     estadoAutoTexto,
@@ -352,6 +396,7 @@
             document.getElementById('mcCuadrados').innerText = contCuadrados;
             document.getElementById('mcFaltantes').innerText = contFaltantes;
             document.getElementById('mcSobrantes').innerText = contSobrantes;
+            actualizarContadoresRevisionManual();
 
             ejecutarFiltro();
         }
@@ -361,7 +406,7 @@
             document.querySelectorAll('.mini-card').forEach(c => c.style.opacity = '1');
             if (filtroEstadoProcess !== 'todos') {
                 document.querySelectorAll('.mini-card').forEach(c => {
-                    if (!c.classList.contains('mc-' + estado)) c.style.opacity = '0.4';
+                    if (c.getAttribute('data-filtro') !== filtroEstadoProcess) c.style.opacity = '0.4';
                 });
             }
             ejecutarFiltro();
@@ -384,15 +429,21 @@
             ejecutarFiltro();
         };
 
-        window.ejecutarFiltro = () => {
+        window.ejecutarFiltro = (preservarScroll = false) => {
+            const scrollContainer = document.querySelector('.scroll');
+            const scrollPrevio = (preservarScroll && scrollContainer) ? scrollContainer.scrollTop : 0;
+            const limitePrevio = preservarScroll ? Math.max(itemsCargados, itemsPorPagina) : itemsPorPagina;
+
             const term = document.getElementById('busquedaProcess').value.trim().toLowerCase();
 
             listaFiltradaGlobal = listaCruzadaGlobal.filter(item => {
                 let cumpleEstado = true;
-                if (filtroEstadoProcess !== 'todos') {
+                if (filtroEstadoProcess === 'faltantes' || filtroEstadoProcess === 'sobrantes' || filtroEstadoProcess === 'cuadrados') {
                     cumpleEstado = item.estadoPicking === filtroEstadoProcess;
+                } else if (filtroEstadoProcess === 'Justificado' || filtroEstadoProcess === 'No Justifica' || filtroEstadoProcess === 'Análisis') {
+                    cumpleEstado = item.estadoManual === filtroEstadoProcess;
                 }
-                const texto = `${item.cod} ${item.pos} ${item.nom} ${item.estadoFinalReporte}`.toLowerCase();
+                const texto = `${item.cod} ${item.pos} ${item.nom} ${item.ops1} ${item.ops2} ${item.estadoFinalReporte}`.toLowerCase();
                 return cumpleEstado && texto.includes(term);
             });
 
@@ -427,7 +478,13 @@
                 return;
             }
 
-            renderizarSiguientePaginaProcess();
+            while (itemsCargados < limitePrevio && itemsCargados < listaFiltradaGlobal.length) {
+                renderizarSiguientePaginaProcess();
+            }
+
+            if (preservarScroll && scrollContainer) {
+                scrollContainer.scrollTop = scrollPrevio;
+            }
         };
 
         // Renderizado optimizado con DocumentFragment y paginación por lotes
@@ -450,33 +507,26 @@
                     ? `<small style="display:block; color:#f9ab00; font-weight:bold; font-size:0.7rem;">Pendiente 1er C.</small>`
                     : (item.dif1 !== null ? `<small style="color:${colorDif1}; font-weight:bold;">(${item.dif1 > 0 ? '+' + item.dif1 : item.dif1})</small>` : '');
 
+                const htmlOps1 = item.ops1 ? `<small style="display:block; color:var(--primary); font-weight:600; font-size:0.7rem; margin-top:2px;">👤 ${item.ops1}</small>` : '';
+                const htmlOps2 = item.ops2 ? `<small style="display:block; color:var(--primary); font-weight:600; font-size:0.7rem; margin-top:2px;">👤 ${item.ops2}</small>` : '';
+
                 const colorNeto = item.cruceNeto === 0 ? '#15803d' : (item.cruceNeto < 0 ? '#e71d36' : '#4361ee');
                 const signoNeto = item.cruceNeto > 0 ? '+' + item.cruceNeto : item.cruceNeto;
-
-                let claseSelect = 'select-cruce-auto';
-                if (item.estadoManual !== 'AUTO') {
-                    if (item.estadoManual === 'Justificado') claseSelect = 'select-cruce-ok';
-                    else if (item.estadoManual === 'Análisis') claseSelect = 'select-cruce-warn';
-                    else if (item.estadoManual === 'No Justifica') claseSelect = 'select-cruce-danger';
-                } else {
-                    if (item.cruceNeto >= 0 && item.difVigente > 0) claseSelect = 'select-cruce-ok';
-                    else if (item.difVigente > 0 && item.cruceNeto < 0) claseSelect = 'select-cruce-warn';
-                    else claseSelect = 'select-cruce-danger';
-                }
+                const claseSelect = obtenerClaseSelect(item);
 
                 return `
                     <tr>
                         <td style="font-weight:bold; color:var(--primary);">${item.cod}</td>
                         <td><b style="color:#4361ee;">${item.pos}</b></td>
                         <td align="center"><b>${item.stock}</b></td>
-                        <td align="center" style="background:#fef2f2;"><b>${item.encontrados}</b> ${badgeNoContado}</td>
-                        <td align="center" style="background:#eff6ff; font-weight:bold;">${item.reconteoFinal}</td>
+                        <td align="center" style="background:#fef2f2;"><b>${item.encontrados}</b> ${badgeNoContado}${htmlOps1}</td>
+                        <td align="center" style="background:#eff6ff; font-weight:bold;">${item.reconteoFinal}${htmlOps2}</td>
                         <td align="center" style="color:${colorDifFinal}; font-weight:bold;">${item.difVigente !== "-" && item.difVigente > 0 ? '+' + item.difVigente : item.difVigente}</td>
                         <td align="center" style="background:#fff8eb; font-weight:bold; color:#d97706;">${item.cantProcess}</td>
                         <td align="center" style="min-width:210px;">
                             <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
                                 <span style="font-size:0.82rem; font-weight:bold; color:${colorNeto};">Neto: ${signoNeto}</span>
-                                <select class="select-cruce ${claseSelect}" onchange="cambiarEstadoManual('${item.cod}', this.value)">
+                                <select id="sel-cruce-${item.cod}" class="select-cruce ${claseSelect}" onchange="cambiarEstadoManual('${item.cod}', this.value)">
                                     <option value="AUTO" ${item.estadoManual === 'AUTO' ? 'selected' : ''}>⚡ Auto: ${item.estadoAutoTexto}</option>
                                     <option value="Justificado" ${item.estadoManual === 'Justificado' ? 'selected' : ''}>✅ Justificado</option>
                                     <option value="No Justifica" ${item.estadoManual === 'No Justifica' ? 'selected' : ''}>❌ No Justifica</option>
@@ -513,9 +563,9 @@
         }, 300);
 
         window.copiarTablaExcel = () => {
-            let texto = "Código\tUbicación\tStock (Sistema)\t1er conteo\tReconteo\tDif. Picking\tCant. Process\tCruce Neto\tEstado Cruce\n";
+            let texto = "Código\tUbicación\tStock (Sistema)\t1er conteo\tOp. 1er Conteo\tReconteo\tOp. Reconteo\tDif. Picking\tCant. Process\tCruce Neto\tEstado Cruce\n";
             listaFiltradaGlobal.forEach(r => {
-                texto += `${r.cod}\t${r.pos}\t${r.stock}\t${r.encontrados}\t${r.reconteoFinal}\t${r.difVigente}\t${r.cantProcess}\t${r.cruceNeto}\t${r.estadoFinalReporte}\n`;
+                texto += `${r.cod}\t${r.pos}\t${r.stock}\t${r.encontrados}\t${r.ops1 || '---'}\t${r.reconteoFinal}\t${r.ops2 || '---'}\t${r.difVigente}\t${r.cantProcess}\t${r.cruceNeto}\t${r.estadoFinalReporte}\n`;
             });
             navigator.clipboard.writeText(texto).then(() => {
                 alert("¡Datos copiados! Ya puedes pegarlos en Excel.");
@@ -532,7 +582,9 @@
                 "Ubicación": r.pos,
                 "Stock (Sistema)": r.stock,
                 "1er conteo": r.encontrados,
+                "Op. 1er Conteo": r.ops1 || "---",
                 "Reconteo": r.reconteoFinal,
+                "Op. Reconteo": r.ops2 || "---",
                 "Dif. Final Picking": r.difVigente,
                 "Cant. Process": r.cantProcess,
                 "Cruce Neto": r.cruceNeto,
@@ -569,10 +621,13 @@
         .btn-copy-excel:hover { background: #166534; }
 
         .mini-dashboard { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
-        .mini-card { flex: 1; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.85rem; cursor: pointer; transition: opacity 0.3s; }
+        .mini-card { flex: 1; min-width: 150px; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.85rem; cursor: pointer; transition: opacity 0.3s; }
         .mc-cuadrados { background: #e6f9f7; color: var(--success); border: 1px solid #c0f0eb; }
         .mc-faltantes { background: #ffe5e5; color: var(--danger); border: 1px solid #ffcccc; }
         .mc-sobrantes { background: #fff4cc; color: var(--warning); border: 1px solid #ffe680; }
+        .mc-justificado { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .mc-nojustifica { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+        .mc-analisis { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
 
         .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; box-sizing: border-box; }
         .search-input:focus { border-color: var(--primary); }
@@ -595,8 +650,7 @@
     <div class="login-card">
         <i class="fa-solid fa-magnifying-glass-location" style="font-size: 3rem; color: var(--primary); margin-bottom: 10px;"></i>
         <h2 style="margin-top:0;">Acceso Admin</h2>
-        <input type="text" id="userLog" placeholder="Usuario">
-        <input type="password" id="passLog" placeholder="Contraseña">
+        <input type="password" id="passLog" placeholder="Contraseña" autofocus>
         <button class="btn-login" onclick="validarAcceso()">ENTRAR</button>
     </div>
 </div>
@@ -641,18 +695,27 @@
         </div>
 
         <div class="mini-dashboard">
-            <div class="mini-card mc-cuadrados" style="display:none;" onclick="setFiltroEstado('cuadrados')" title="Filtrar códigos cuadrados en Picking">
+            <div class="mini-card mc-cuadrados" data-filtro="cuadrados" style="display:none;" onclick="setFiltroEstado('cuadrados')" title="Filtrar códigos cuadrados en Picking">
                 ✅ Cuadrados en Picking: <span id="mcCuadrados">0</span>
             </div>
-            <div class="mini-card mc-faltantes" onclick="setFiltroEstado('faltantes')" title="Filtrar códigos con faltante en Picking">
+            <div class="mini-card mc-faltantes" data-filtro="faltantes" onclick="setFiltroEstado('faltantes')" title="Filtrar códigos con faltante en Picking">
                 ⬇️ Faltantes en Picking: <span id="mcFaltantes">0</span>
             </div>
-            <div class="mini-card mc-sobrantes" onclick="setFiltroEstado('sobrantes')" title="Filtrar códigos con sobrante en Picking">
+            <div class="mini-card mc-sobrantes" data-filtro="sobrantes" onclick="setFiltroEstado('sobrantes')" title="Filtrar códigos con sobrante en Picking">
                 ⬆️ Sobrantes en Picking: <span id="mcSobrantes">0</span>
+            </div>
+            <div class="mini-card mc-justificado" data-filtro="Justificado" onclick="setFiltroEstado('Justificado')" title="Filtrar marcados manualmente como Justificado">
+                ✅ Justificado: <span id="mcJustificado">0</span>
+            </div>
+            <div class="mini-card mc-nojustifica" data-filtro="No Justifica" onclick="setFiltroEstado('No Justifica')" title="Filtrar marcados manualmente como No Justifica">
+                ❌ No Justifica: <span id="mcNoJustifica">0</span>
+            </div>
+            <div class="mini-card mc-analisis" data-filtro="Análisis" onclick="setFiltroEstado('Análisis')" title="Filtrar marcados manualmente en Análisis">
+                🔍 Análisis: <span id="mcAnalisis">0</span>
             </div>
         </div>
 
-        <input type="text" id="busquedaProcess" class="search-input" placeholder="🔍 Buscar por código, ubicación o estado de cruce..." oninput="ejecutarFiltro()">
+        <input type="text" id="busquedaProcess" class="search-input" placeholder="🔍 Buscar por código, ubicación, operador o estado de cruce..." oninput="ejecutarFiltro()">
 
         <div class="scroll">
             <table>
@@ -676,7 +739,6 @@
 </div>
 
 <script>
-    document.getElementById('userLog').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('passLog').focus(); });
     document.getElementById('passLog').addEventListener('keydown', (e) => { if (e.key === 'Enter') validarAcceso(); });
 </script>
 </body>

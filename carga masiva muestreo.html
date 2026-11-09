@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📤 Carga Masiva - Inventario</title>
+    <title>📤 Carga Masiva</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -68,25 +68,37 @@
                     const maestroData = snapMaestro.val() || [];
                     const maestroMap = {};
                     Object.values(maestroData).forEach(item => {
-                        maestroMap[String(item.cod).trim()] = item;
+                        if (item && item.cod !== undefined) {
+                            maestroMap[String(item.cod).trim()] = item;
+                        }
                     });
 
-                    const registrosValidos = [];
+                    const agrupadosExcel = {};
                     let conteoFallo = 0;
 
                     for (let row of json) {
-                        const rawCod = row["CODIGO"] !== undefined ? row["CODIGO"] : (row["codigo"] !== undefined ? row["codigo"] : row["Codigo"]);
-                        const rawCant = row["CANTIDAD"] !== undefined ? row["CANTIDAD"] : (row["cantidad"] !== undefined ? row["cantidad"] : row["Cantidad"]);
+                        let rawCod = undefined;
+                        let rawCant = undefined;
+
+                        for (let k in row) {
+                            const keyNorm = k.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                            if (keyNorm === "CODIGO") rawCod = row[k];
+                            if (keyNorm === "CANTIDAD") rawCant = row[k];
+                        }
 
                         if (rawCod !== undefined && rawCant !== undefined && String(rawCod).trim() !== "") {
-                            registrosValidos.push({
-                                cod: String(rawCod).trim(),
-                                cant: parseFloat(rawCant) || 0
-                            });
+                            const codLimpio = String(rawCod).trim();
+                            const cantNum = parseFloat(rawCant) || 0;
+                            agrupadosExcel[codLimpio] = (agrupadosExcel[codLimpio] || 0) + cantNum;
                         } else {
                             conteoFallo++;
                         }
                     }
+
+                    const registrosValidos = Object.keys(agrupadosExcel).map(cod => ({
+                        cod: cod,
+                        cant: agrupadosExcel[cod]
+                    }));
 
                     // Limpieza proactiva de RAM
                     json = null;
@@ -120,6 +132,7 @@
                                 fecha: new Date().toLocaleString(),
                                 usuario: usuario
                             };
+                            updates[`auditoria/${record.cod}`] = null;
                         });
 
                         await update(ref(db), updates);
