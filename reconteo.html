@@ -27,6 +27,15 @@
         const dbRefReconteo = ref(db, 'registros_reconteo'); 
         const dbRefConfigPendientes = ref(db, 'configuracion/enviarPendientes');
 
+        // Escuchador de estado para pantalla de bloqueo al recibir nuevo inventario
+        onValue(ref(db, 'estado_sistema/cargando'), (snapshot) => {
+            const cargando = snapshot.val();
+            const overlay = document.getElementById('overlayCargandoInventario');
+            if (overlay) {
+                overlay.style.display = cargando ? 'flex' : 'none';
+            }
+        });
+
         let inventarioMaestro = {};
         let conteo1Agrupado = {};
         let reconteoAgrupado = {};
@@ -34,6 +43,48 @@
         let itemSeleccionado = null;
         let permitirPendientesNoContados = false;
         let registrosParciales = JSON.parse(localStorage.getItem('reconteo_parciales_op') || '{}');
+        let unsubscribeSesionActiva = null;
+        let enviandoReconteo = false;
+        let audioCtxGlobal = null;
+
+        window.emitirSonido = (tipo) => {
+            if (navigator.vibrate) {
+                if (tipo === 'ok') { navigator.vibrate(60); }
+                else { navigator.vibrate([100, 50, 100]); }
+            }
+            try {
+                if (!audioCtxGlobal) {
+                    audioCtxGlobal = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtxGlobal.state === 'suspended') {
+                    audioCtxGlobal.resume();
+                }
+                const osc = audioCtxGlobal.createOscillator();
+                const gain = audioCtxGlobal.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtxGlobal.destination);
+                if (tipo === 'ok') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(987.77, audioCtxGlobal.currentTime);
+                    osc.frequency.setValueAtTime(1318.51, audioCtxGlobal.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0, audioCtxGlobal.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtxGlobal.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtxGlobal.currentTime + 0.1);
+                    gain.gain.linearRampToValueAtTime(0, audioCtxGlobal.currentTime + 0.2);
+                    osc.start();
+                    osc.stop(audioCtxGlobal.currentTime + 0.2);
+                } else {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, audioCtxGlobal.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(150, audioCtxGlobal.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0, audioCtxGlobal.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.15, audioCtxGlobal.currentTime + 0.02);
+                    gain.gain.linearRampToValueAtTime(0, audioCtxGlobal.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtxGlobal.currentTime + 0.25);
+                }
+            } catch (e) {}
+        };
 
         window.toggleDarkMode = () => {
             document.body.classList.toggle('dark-mode');
@@ -91,9 +142,24 @@
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
                         
-                        // REGISTRAR USUARIO ACTIVO Y CONFIGURAR DESCONEXIÓN
+                        // REGISTRAR USUARIO ACTIVO, ESCUCHAR CIERRE REMOTO Y CONFIGURAR DESCONEXIÓN
                         const refActivo = ref(db, 'usuarios_activos/' + usuarioActual);
-                        set(refActivo, true);
+                        set(refActivo, true).then(() => {
+                            if (unsubscribeSesionActiva) unsubscribeSesionActiva();
+                            unsubscribeSesionActiva = onValue(refActivo, (snapActivo) => {
+                                if (!snapActivo.exists() && usuarioActual !== "") {
+                                    if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
+                                    cerrarModalReconteo();
+                                    usuarioActual = "";
+                                    document.getElementById('displayUsuario').innerText = "👤 Op: -";
+                                    document.getElementById('userOp').value = "";
+                                    document.getElementById('pinOp').value = "";
+                                    document.getElementById('loginOverlayOp').style.display = 'flex';
+                                    alert("Tu sesión ha sido cerrada por el administrador.");
+                                    document.getElementById('userOp').focus();
+                                }
+                            });
+                        });
                         onDisconnect(refActivo).remove();
                         
                     } else {
@@ -112,12 +178,14 @@
 
         window.cerrarSesion = () => {
             if (confirm("¿Estás seguro de que deseas cerrar sesión?")) {
-                // ELIMINAR SESIÓN ACTIVA MANUALMENTE AL SALIR
-                if (usuarioActual) {
-                    remove(ref(db, 'usuarios_activos/' + usuarioActual));
+                if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
+                const userSaliente = usuarioActual;
+                usuarioActual = "";
+
+                if (userSaliente) {
+                    remove(ref(db, 'usuarios_activos/' + userSaliente));
                 }
                 
-                usuarioActual = "";
                 document.getElementById('displayUsuario').innerText = "👤 Op: -";
                 document.getElementById('userOp').value = "";
                 document.getElementById('pinOp').value = "";
@@ -138,11 +206,11 @@
             calcularPendientesDebounced();
         });
 
-        // OPTIMIZACIÓN RED: Se usa get() en lugar de onValue() para datos estáticos del operador
-        get(dbRefMaestro).then((snap) => {
+        // Sincronización en tiempo real del Maestro
+        onValue(dbRefMaestro, (snap) => {
             const data = snap.val() || [];
             inventarioMaestro = {};
-            data.forEach(item => { if(item.cod) inventarioMaestro[item.cod] = item; });
+            data.forEach(item => { if(item && item.cod) inventarioMaestro[item.cod] = item; });
             calcularPendientesDebounced(); 
         });
 
@@ -284,6 +352,7 @@
         };
 
         window.abrirReconteo = (objStr) => {
+            enviandoReconteo = false;
             itemSeleccionado = JSON.parse(decodeURIComponent(objStr));
             document.getElementById('modalReconteo').style.display = 'flex';
             document.getElementById('recUbicacion').innerText = itemSeleccionado.pos;
@@ -291,6 +360,11 @@
             
             const input1 = document.getElementById('cantidadReconteo');
             const input2 = document.getElementById('cantidadReconteo2');
+            const btnEnviar = document.getElementById('btnEnviarReconteo');
+            input1.disabled = false;
+            input2.disabled = false;
+            if (btnEnviar) { btnEnviar.disabled = false; btnEnviar.style.opacity = "1"; btnEnviar.innerText = "✅ ENVIAR"; }
+
             input2.value = "";
 
             if (registrosParciales[itemSeleccionado.cod] !== undefined) {
@@ -304,19 +378,26 @@
             }
         };
 
-        window.cerrarModalReconteo = () => { document.getElementById('modalReconteo').style.display = 'none'; itemSeleccionado = null; };
+        window.cerrarModalReconteo = () => {
+            enviandoReconteo = false;
+            document.getElementById('modalReconteo').style.display = 'none';
+            itemSeleccionado = null;
+        };
 
         window.guardarPrimerRegistro = () => {
+            if (enviandoReconteo) return;
             const input1 = document.getElementById('cantidadReconteo');
             const cantStr1 = input1.value;
             const cant1 = parseFloat(cantStr1);
 
             if (cantStr1 === "" || !itemSeleccionado) {
+                emitirSonido('error');
                 alert("Ingrese la cantidad del 1er Registro.");
                 input1.focus();
                 return;
             }
             if (isNaN(cant1) || cant1 < 0) {
+                emitirSonido('error');
                 alert("Por favor, ingrese un número válido mayor o igual a cero.");
                 input1.value = "";
                 input1.focus();
@@ -326,19 +407,22 @@
             registrosParciales[itemSeleccionado.cod] = cant1;
             localStorage.setItem('reconteo_parciales_op', JSON.stringify(registrosParciales));
 
-            if (navigator.vibrate) navigator.vibrate(60);
+            emitirSonido('ok');
             mostrarToast(`📌 1er Reg. de ${itemSeleccionado.cod} guardado (${cant1} unds)`);
             cerrarModalReconteo();
             calcularPendientes();
         };
 
         window.guardarReconteo = () => {
+            if (enviandoReconteo) return;
             const inputElement1 = document.getElementById('cantidadReconteo');
             const inputElement2 = document.getElementById('cantidadReconteo2');
+            const btnEnviar = document.getElementById('btnEnviarReconteo');
             const cantStr1 = inputElement1.value;
             const cantStr2 = inputElement2.value;
 
             if (cantStr1 === "" && cantStr2 === "") { 
+                emitirSonido('error');
                 alert("Ingrese cantidad"); 
                 inputElement1.focus();
                 return; 
@@ -349,9 +433,15 @@
             const cant2 = cantStr2 !== "" ? parseFloat(cantStr2) : 0;
 
             if (isNaN(cant1) || cant1 < 0 || isNaN(cant2) || cant2 < 0) { 
+                emitirSonido('error');
                 alert("Por favor, ingrese un número válido mayor o igual a cero."); 
                 return; 
             } 
+
+            enviandoReconteo = true;
+            inputElement1.disabled = true;
+            inputElement2.disabled = true;
+            if (btnEnviar) { btnEnviar.disabled = true; btnEnviar.style.opacity = "0.6"; btnEnviar.innerText = "⏳ ENVIANDO..."; }
 
             const totalCant = cant1 + cant2;
             const totalCantStr = String(totalCant);
@@ -369,10 +459,15 @@
                     delete registrosParciales[codActual];
                     localStorage.setItem('reconteo_parciales_op', JSON.stringify(registrosParciales));
                 }
-                if (navigator.vibrate) navigator.vibrate(100); 
+                emitirSonido('ok');
                 mostrarToast(`✅ ${codActual} guardado (${totalCantStr} unds)`);
                 cerrarModalReconteo();
             }).catch((error) => {
+                enviandoReconteo = false;
+                inputElement1.disabled = false;
+                inputElement2.disabled = false;
+                if (btnEnviar) { btnEnviar.disabled = false; btnEnviar.style.opacity = "1"; btnEnviar.innerText = "✅ ENVIAR"; }
+                emitirSonido('error');
                 alert("Error al guardar en Firebase. Revisa tu conexión.");
             });
         };
@@ -414,6 +509,8 @@
         .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); display:none; justify-content:center; align-items:center; z-index:100; }
         .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 350px; text-align: center; }
         .modal-ubicacion { font-size: 3rem; font-weight: 900; color: var(--danger); margin: 10px 0; }
+
+        @keyframes latidoMensaje { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
 
         .btn-dark-mode { cursor: pointer; font-size: 0.65rem; font-weight: bold; background: #eee; padding: 4px 10px; border-radius: 12px; user-select: none; color: #333; }
         body.dark-mode { --bg: #121212; color: #e0e0e0; }
@@ -457,6 +554,13 @@
     </style>
 </head>
 <body>
+
+<!-- Pantalla de bloqueo al recibir inventario -->
+<div id="overlayCargandoInventario" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; flex-direction:column; justify-content:center; align-items:center; color:white; text-align:center; backdrop-filter: blur(5px);">
+    <div style="font-size: 4rem; margin-bottom: 15px; animation: latidoMensaje 1s infinite;">📦</div>
+    <h2 style="margin: 0; color: #34a853; text-transform: uppercase; font-weight: 900; letter-spacing: 1px;">Recibiendo Nuevo Inventario</h2>
+    <p style="font-size: 1rem; color: #ddd; margin-top: 10px;">Por favor, espere. El sistema se actualizará automáticamente...</p>
+</div>
 
 <div id="loginOverlayOp">
     <div class="login-card-op">
@@ -506,7 +610,7 @@
         <button class="btn-main" style="background:#f9ab00; color:#000; padding: 11px; margin-top: 8px; font-size: 0.85rem;" onclick="guardarPrimerRegistro()">📌 GUARDAR 1ER REG. (SEGUIR EN LISTA)</button>
         
         <div style="display:flex; gap:10px; margin-top:8px;">
-            <button class="btn-main" style="margin-top:0;" onclick="guardarReconteo()">✅ ENVIAR</button>
+            <button id="btnEnviarReconteo" class="btn-main" style="margin-top:0;" onclick="guardarReconteo()">✅ ENVIAR</button>
             <button class="btn-main" style="background:#666; margin-top:0;" onclick="cerrarModalReconteo()">CANCELAR</button>
         </div>
     </div>

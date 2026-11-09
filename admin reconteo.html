@@ -9,7 +9,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, get, remove, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        import { getDatabase, ref, get, remove, onValue, update } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -34,11 +34,16 @@
         
         let filtroEstadoReconteo = 'todos';
 
-        // Variables para el ordenamiento
+        // Variables para el ordenamiento de la tabla principal
         let colOrdenActual = null;
         let ordenAscendente = true;
 
-        // --- NUEVAS VARIABLES GLOBALES AÑADIDAS ---
+        // Variables para el ordenamiento del modal de pendientes
+        let listaPendientesModalGlobal = [];
+        let colOrdenPendientes = null;
+        let ordenAscPendientes = true;
+
+        // --- VARIABLES GLOBALES ---
         let debounceTimerReconteo;
         let listaDescuadradosGlobal = [];
         let listaFiltradaReconteo = [];
@@ -89,7 +94,7 @@
             triggerProcesar();
         });
 
-        // Función para cambiar la columna de orden
+        // Función optimizada para cambiar la columna de orden sin recalcular todo el inventario
         window.ordenarPor = (columna) => {
             if (colOrdenActual === columna) {
                 ordenAscendente = !ordenAscendente;
@@ -97,7 +102,8 @@
                 colOrdenActual = columna;
                 ordenAscendente = true;
             }
-            procesarTablaComparativa();
+            actualizarIconosOrden();
+            ejecutarFiltro();
         };
 
         function actualizarIconosOrden() {
@@ -114,6 +120,48 @@
             });
         }
 
+        // Ordenamiento exclusivo para el modal de Códigos Pendientes
+        window.ordenarPendientesModal = (col) => {
+            if (colOrdenPendientes === col) {
+                ordenAscPendientes = !ordenAscPendientes;
+            } else {
+                colOrdenPendientes = col;
+                ordenAscPendientes = true;
+            }
+            const spanCod = document.getElementById('sort-pend-cod');
+            const spanPos = document.getElementById('sort-pend-pos');
+            if (spanCod) spanCod.innerText = colOrdenPendientes === 'cod' ? (ordenAscPendientes ? ' ▲' : ' ▼') : '';
+            if (spanPos) spanPos.innerText = colOrdenPendientes === 'pos' ? (ordenAscPendientes ? ' ▲' : ' ▼') : '';
+            renderListaPendientesModal();
+        };
+
+        function renderListaPendientesModal() {
+            let lista = [...listaPendientesModalGlobal];
+            if (colOrdenPendientes) {
+                lista.sort((a, b) => {
+                    let vA = String(a[colOrdenPendientes] || '').toLowerCase();
+                    let vB = String(b[colOrdenPendientes] || '').toLowerCase();
+                    if (colOrdenPendientes === 'cod') {
+                        const nA = Number(vA), nB = Number(vB);
+                        if (!isNaN(nA) && !isNaN(nB)) return ordenAscPendientes ? nA - nB : nB - nA;
+                    }
+                    if (vA < vB) return ordenAscPendientes ? -1 : 1;
+                    if (vA > vB) return ordenAscPendientes ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            if (lista.length === 0) {
+                document.getElementById('listaCodigosPendientes').innerHTML = `<tr><td colspan="2" style="padding: 20px; text-align: center; color: #888;">No hay códigos pendientes 🎉</td></tr>`;
+            } else {
+                document.getElementById('listaCodigosPendientes').innerHTML = lista.map(reg => `
+                    <tr>
+                        <td style="color: var(--primary); font-weight: 700; padding: 14px 10px; border-bottom: 1px solid #f4f4f4; font-size: 0.95rem; user-select: text; cursor: text;" title="Seleccionar código">${reg.cod}</td>
+                        <td style="color: #444; font-weight: 700; padding: 14px 10px; border-bottom: 1px solid #f4f4f4; font-size: 0.95rem; text-align: right; user-select: text; cursor: text;" title="Seleccionar ubicación">${reg.pos}</td>
+                    </tr>`).join('');
+            }
+        }
+
         function procesarTablaComparativa() {
             if(Object.keys(dataMaestro).length === 0) return;
             
@@ -121,7 +169,7 @@
             let reconteosCompletados = 0;
             let noCoinciden = 0; 
             
-            // --- NUEVAS ESTADISTICAS DE PRECISION ---
+            // --- ESTADISTICAS DE PRECISION ---
             let adminStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
             let reconteoStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
             let generalStats = { cuad: 0, falt: 0, sobr: 0, total: 0 };
@@ -140,14 +188,14 @@
                 let difFinal = fueContado2 ? (fisico2 - teorico) : "-";
                 let userReconteo = reconteoObj ? Array.from(reconteoObj.usuarios).join(', ') : "Pendiente";
                 
-                // Cálculos de Admin (1er Conteo) - AHORA EVALÚA TODOS LOS 873 SKU
+                // Cálculos de Admin (1er Conteo)
                 adminStats.total++;
                 let dif1 = fisico1 - teorico;
                 if (dif1 === 0) adminStats.cuad++;
                 else if (dif1 < 0) adminStats.falt++;
                 else adminStats.sobr++;
 
-                // Cálculos de Reconteo (2do Conteo) - SE MANTIENE SOLO PARA LOS RECONTADOS
+                // Cálculos de Reconteo (2do Conteo)
                 if (fueContado2) {
                     reconteoStats.total++;
                     if (difFinal === 0) reconteoStats.cuad++;
@@ -155,7 +203,7 @@
                     else reconteoStats.sobr++;
                 }
 
-                // Cálculos Generales (Total Final unificado) - AHORA EVALÚA TODOS LOS 873 SKU
+                // Cálculos Generales (Total Final unificado)
                 generalStats.total++;
                 let difGen = fueContado2 ? difFinal : (fisico1 - teorico);
                 if (difGen === 0) generalStats.cuad++;
@@ -164,7 +212,6 @@
 
                 if(reconteoObj) {
                     reconteosCompletados++;
-                    // Evaluar si el reconteo no coincide con el 1er conteo
                     if(fisico2 !== fisico1) {
                         noCoinciden++;
                     }
@@ -184,30 +231,6 @@
                 }
             }
 
-            // Aplicar lógica de ordenamiento si hay una columna seleccionada
-            if (colOrdenActual) {
-                descuadradosData.sort((a, b) => {
-                    let valA = a[colOrdenActual];
-                    let valB = b[colOrdenActual];
-
-                    if (valA === "-" || valA === "Pendiente") valA = ordenAscendente ? 999999999 : -999999999;
-                    if (valB === "-" || valB === "Pendiente") valB = ordenAscendente ? 999999999 : -999999999;
-
-                    let numA = Number(valA);
-                    let numB = Number(valB);
-
-                    if (!isNaN(numA) && !isNaN(numB)) {
-                        return ordenAscendente ? numA - numB : numB - numA;
-                    } else {
-                        let strA = String(valA).toLowerCase();
-                        let strB = String(valB).toLowerCase();
-                        if (strA < strB) return ordenAscendente ? -1 : 1;
-                        if (strA > strB) return ordenAscendente ? 1 : -1;
-                        return 0;
-                    }
-                });
-            }
-
             actualizarIconosOrden();
 
             // Cálculos para indicadores de resueltos, confirmados y no coinciden
@@ -216,8 +239,7 @@
             let cantidadConfirmados = 0;
             let pendientesReconteo = totalDescuadres - reconteosCompletados;
 
-            // Generar lista HTML de pendientes para el Modal (Sin columna Producto)
-            let htmlListaPendientes = '';
+            listaPendientesModalGlobal = [];
 
             descuadradosData.forEach(reg => {
                 if (reg.difFinal === 0) {
@@ -226,21 +248,12 @@
                     cantidadConfirmados++;
                 }
 
-                // Si no tiene reconteo final ("-"), es un pendiente - Renderizado estilo tabla
                 if (reg.fisico2 === "-") {
-                    htmlListaPendientes += `
-                        <tr>
-                            <td style="color: var(--primary); font-weight: 700; padding: 14px 10px; border-bottom: 1px solid #f4f4f4; font-size: 0.95rem; user-select: text; cursor: text;" title="Seleccionar código">${reg.cod}</td>
-                            <td style="color: #444; font-weight: 700; padding: 14px 10px; border-bottom: 1px solid #f4f4f4; font-size: 0.95rem; text-align: right; user-select: text; cursor: text;" title="Seleccionar ubicación">${reg.pos}</td>
-                        </tr>`;
+                    listaPendientesModalGlobal.push({ cod: reg.cod, pos: reg.pos });
                 }
             });
 
-            // Si no hay pendientes, mostrar mensaje (ajustado colspan a 2)
-            if (htmlListaPendientes === '') {
-                htmlListaPendientes = `<tr><td colspan="2" style="padding: 20px; text-align: center; color: #888;">No hay códigos pendientes 🎉</td></tr>`;
-            }
-            document.getElementById('listaCodigosPendientes').innerHTML = htmlListaPendientes;
+            renderListaPendientesModal();
 
             let pctResueltos = totalDescuadres > 0 ? Math.round((cantidadResueltos / totalDescuadres) * 100) : 0;
             let pctConfirmados = totalDescuadres > 0 ? Math.round((cantidadConfirmados / totalDescuadres) * 100) : 0;
@@ -271,29 +284,31 @@
             document.getElementById('st-gen-cuad').innerText = `${generalStats.cuad} (${calcPct(generalStats.cuad, generalStats.total)}%)`;
             document.getElementById('st-gen-falt').innerText = `${generalStats.falt} (${calcPct(generalStats.falt, generalStats.total)}%)`;
             document.getElementById('st-gen-sobr').innerText = `${generalStats.sobr} (${calcPct(generalStats.sobr, generalStats.total)}%)`;
-            document.getElementById('st-gen-total').innerText = `${generalStats.total} (100%)`; // NUEVA LÍNEA PARA EL TOTAL
+            document.getElementById('st-gen-total').innerText = `${generalStats.total} (100%)`;
 
             // Calcular y mostrar ERI% Final
             const eriValue = calcPct(generalStats.cuad, generalStats.total);
             document.getElementById('st-eri-final').innerText = `${eriValue}%`;
 
-            listaDescuadradosGlobal = descuadradosData; // Pasamos los datos a la variable global
+            listaDescuadradosGlobal = descuadradosData;
             ejecutarFiltro(); 
         }
 
         window.eliminarReconteo = async (codigo) => {
             if(confirm(`¿Deseas eliminar el RECONTEO del código ${codigo}? (No afectará el primer conteo)`)) {
                 let reconteoObj = conteo2[codigo];
-                if(reconteoObj) {
+                if(reconteoObj && reconteoObj.keys.length > 0) {
+                    const updates = {};
                     for(let key of reconteoObj.keys) {
-                        await remove(ref(db, `registros_reconteo/${key}`));
+                        updates[`registros_reconteo/${key}`] = null;
                     }
+                    await update(ref(db), updates);
                 }
             }
         };
 
         window.borrarCategoriaReconteo = async (categoria, event) => {
-            event.stopPropagation(); // Evita que se active el filtro al hacer clic en el botón flotante
+            event.stopPropagation();
 
             let pin = prompt("🔒 Ingrese el PIN de seguridad:");
             if (pin !== "2026") {
@@ -335,9 +350,11 @@
                 return;
             }
 
+            const updates = {};
             for (let key of keysToBorrar) {
-                await remove(ref(db, `registros_reconteo/${key}`));
+                updates[`registros_reconteo/${key}`] = null;
             }
+            await update(ref(db), updates);
             
             alert(`✅ Se han eliminado correctamente los registros para volver a contar.`);
         };
@@ -371,6 +388,29 @@
 
                 return textoFila.includes(term) && cumpleEstado;
             });
+
+            if (colOrdenActual) {
+                listaFiltradaReconteo.sort((a, b) => {
+                    let valA = a[colOrdenActual];
+                    let valB = b[colOrdenActual];
+
+                    if (valA === "-" || valA === "Pendiente") valA = ordenAscendente ? 999999999 : -999999999;
+                    if (valB === "-" || valB === "Pendiente") valB = ordenAscendente ? 999999999 : -999999999;
+
+                    let numA = Number(valA);
+                    let numB = Number(valB);
+
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        return ordenAscendente ? numA - numB : numB - numA;
+                    } else {
+                        let strA = String(valA).toLowerCase();
+                        let strB = String(valB).toLowerCase();
+                        if (strA < strB) return ordenAscendente ? -1 : 1;
+                        if (strA > strB) return ordenAscendente ? 1 : -1;
+                        return 0;
+                    }
+                });
+            }
 
             itemsCargados = 0;
             document.getElementById('bodyMonitor').innerHTML = "";
@@ -472,6 +512,13 @@
 
         // --- Funciones para abrir y cerrar el modal de pendientes ---
         window.abrirModalPendientes = () => {
+            colOrdenPendientes = null;
+            ordenAscPendientes = true;
+            const spanCod = document.getElementById('sort-pend-cod');
+            const spanPos = document.getElementById('sort-pend-pos');
+            if (spanCod) spanCod.innerText = '';
+            if (spanPos) spanPos.innerText = '';
+            renderListaPendientesModal();
             document.getElementById('modalPendientes').style.display = 'flex';
         };
 
@@ -483,7 +530,6 @@
         window.abrirModalEstadisticas = () => {
             const stats = {};
 
-            // Inicializar usuarios y calcular estadísticas de reconteo
             for (let cod in conteo2) {
                 let reconteoObj = conteo2[cod];
                 let maestroItem = dataMaestro[cod];
@@ -543,6 +589,7 @@
         table { width: 100%; border-collapse: collapse; }
         th { background: #f9fafb; padding: 12px; text-align: left; color: #555; border-bottom: 2px solid #eee; font-size: 0.85rem; position: sticky; top: 0;}
         td { padding: 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
+        #bodyMonitor td, #bodyMonitor span, #bodyMonitor b, #bodyMonitor small { user-select: text; -webkit-user-select: text; cursor: text; }
         
         .user-pill { background: #eef2ff; color: var(--primary); padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 0.75rem; }
         .badge-pendiente { background: #fff4cc; color: var(--warning); padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 0.75rem; }
@@ -685,7 +732,6 @@
                     <span style="color: var(--warning); font-weight: bold;">⬆️ Sobrantes:</span>
                     <span id="st-gen-sobr" style="font-weight: bold; color: #333;">0 (0%)</span>
                 </div>
-                <!-- SECCIÓN NUEVA AGREGADA: TOTAL SKUS -->
                 <div style="display: flex; justify-content: space-between; font-size: 0.95rem; margin-top: 10px; padding-top: 10px; border-top: 2px solid #bae6fd;">
                     <span style="color: var(--primary); font-weight: bold;">∑ Total SKUs:</span>
                     <span id="st-gen-total" style="font-weight: bold; color: #333;">0 (100%)</span>
@@ -757,8 +803,8 @@
             <table style="width: 100%; border-collapse: collapse; text-align: left;">
                 <thead style="position: sticky; top: 0; background: white; z-index: 1;">
                     <tr>
-                        <th style="color: #71717a; font-size: 0.9rem; font-weight: 700; padding: 12px 10px; border-bottom: 1px solid #e4e4e7;">Código</th>
-                        <th style="color: #71717a; font-size: 0.9rem; font-weight: 700; padding: 12px 10px; border-bottom: 1px solid #e4e4e7; text-align: right;">Ubicación</th>
+                        <th onclick="ordenarPendientesModal('cod')" style="color: #71717a; font-size: 0.9rem; font-weight: 700; padding: 12px 10px; border-bottom: 1px solid #e4e4e7; cursor: pointer; user-select: none;" title="Ordenar por Código">Código<span id="sort-pend-cod"></span></th>
+                        <th onclick="ordenarPendientesModal('pos')" style="color: #71717a; font-size: 0.9rem; font-weight: 700; padding: 12px 10px; border-bottom: 1px solid #e4e4e7; text-align: right; cursor: pointer; user-select: none;" title="Ordenar por Ubicación">Ubicación<span id="sort-pend-pos"></span></th>
                     </tr>
                 </thead>
                 <tbody id="listaCodigosPendientes">
