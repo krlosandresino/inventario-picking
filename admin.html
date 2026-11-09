@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
-        import { getDatabase, ref, set, get, remove, onValue } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
+        import { getDatabase, ref, set, get, remove, onValue, update } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxLmlqxw7vNHGiI4mjljUGgZQ5a2VPXuA",
@@ -32,6 +32,7 @@
 
         let dataMaestro = [];
         let rawRegistrosGlobal = {}; 
+        let listaIncidenciasGlobal = [];
         let bateriasGlobal = {}; 
         let mensajesGlobal = {};
         let usuariosActivosGlobal = []; 
@@ -102,10 +103,20 @@
 
         onValue(dbRefIncidencias, (snapshot) => {
             const datos = snapshot.val() || {};
-            const lista = Object.keys(datos).map(key => ({ key: key, ...datos[key] })).reverse();
+            listaIncidenciasGlobal = Object.keys(datos).map(key => ({ key: key, ...datos[key] })).reverse();
             
-            document.getElementById('countInc').innerText = lista.length;
-            document.getElementById('bodyIncidencias').innerHTML = lista.map(inc => `
+            document.getElementById('countInc').innerText = listaIncidenciasGlobal.length;
+            filtrarIncidenciasAdmin();
+        });
+
+        window.filtrarIncidenciasAdmin = () => {
+            const inputEl = document.getElementById('busquedaIncidencias');
+            const term = inputEl ? inputEl.value.trim().toLowerCase() : '';
+            const filtradas = term
+                ? listaIncidenciasGlobal.filter(inc => `${inc.fecha || ''} ${inc.usuario || ''} ${inc.comentario || ''}`.toLowerCase().includes(term))
+                : listaIncidenciasGlobal;
+
+            document.getElementById('bodyIncidencias').innerHTML = filtradas.map(inc => `
                 <tr>
                     <td style="white-space:nowrap; color:#888; user-select: text; cursor: text;" title="Seleccionar hora">${(inc.fecha.split(',')[1] || inc.fecha).trim()}</td>
                     <td style="white-space:nowrap; user-select: text; cursor: text;" title="Seleccionar operador"><b>${inc.usuario}</b></td>
@@ -117,7 +128,7 @@
                     </td>
                 </tr>
             `).join('');
-        });
+        };
 
         function renderMonitorAgrupado() {
             const listaRaw = Object.values(rawRegistrosGlobal);
@@ -197,13 +208,14 @@
 
         window.eliminarRegistroIndividual = async (codigo) => {
             if(confirm(`¿Deseas eliminar los registros del código ${codigo} para que lo vuelvan a ingresar?`)) {
-                const snap = await get(dbRefRegistros);
-                const registros = snap.val() || {};
-                
-                for (const key in registros) {
-                    if (String(registros[key].cod) === String(codigo)) {
-                        await remove(ref(db, `registros/${key}`));
+                const updates = {};
+                for (const key in rawRegistrosGlobal) {
+                    if (String(rawRegistrosGlobal[key].cod) === String(codigo)) {
+                        updates[`registros/${key}`] = null;
                     }
+                }
+                if (Object.keys(updates).length > 0) {
+                    await update(ref(db), updates);
                 }
                 alert(`Registros del código ${codigo} eliminados.`);
             }
@@ -255,7 +267,7 @@
                     agrupados[i.cod].listaUsuarios.add(i.usuario);
                 });
 
-                const codigosRegistrados = Object.keys(agrupados);
+                const codigosRegistrados = new Set(Object.keys(agrupados));
                 
                 const rows = Object.values(agrupados).map(i => ({ 
                     Ubicacion: i.pos, Codigo: i.cod, Producto: i.nom, Stock: i.teorico, 
@@ -265,7 +277,7 @@
                 }));
 
                 dataMaestro.forEach(m => {
-                    if (!codigosRegistrados.includes(String(m.cod))) {
+                    if (!codigosRegistrados.has(String(m.cod))) {
                         rows.push({
                             Ubicacion: m.pos, Codigo: m.cod, Producto: m.nom, Stock: m.stock,
                             Encontrados: 0, Diferencia: 0 - (m.stock || 0),
@@ -335,9 +347,11 @@
 
         window.borrarHistorial = async () => {
             if(confirm("¿DESEAS BORRAR TODA LA INFORMACION?")) {
-                await remove(dbRefRegistros);
-                await remove(dbRefIncidencias);
-                await remove(dbRefMensajes);
+                await Promise.all([
+                    remove(dbRefRegistros),
+                    remove(dbRefIncidencias),
+                    remove(dbRefMensajes)
+                ]);
                 alert("Datos limpiados correctamente.");
             }
         };
@@ -432,15 +446,6 @@
                 const teo = parseFloat(reg.teorico || 0);
                 const fis = reg.cant;
                 const dif = fis - teo;
-                
-                if (dif === 0) contCuadrados++;
-                else if (dif < 0) contFaltantes++;
-                else if (dif > 0) contSobrantes++;
-
-                let cumpleEstado = true;
-                if (filtroEstadoGlobal === 'cuadrados' && dif !== 0) cumpleEstado = false;
-                if (filtroEstadoGlobal === 'faltantes' && dif >= 0) cumpleEstado = false;
-                if (filtroEstadoGlobal === 'sobrantes' && dif <= 0) cumpleEstado = false;
 
                 let cumpleUsuario = true;
                 if (filtroUsuarioGlobal !== 'todos') {
@@ -452,6 +457,17 @@
 
                 const textoFila = `${Array.from(reg.usuarios).join(', ')} ${reg.cod} ${reg.pos}`.toLowerCase();
                 const cumpleBusqueda = textoFila.includes(term);
+
+                if (cumpleUsuario && cumpleBusqueda) {
+                    if (dif === 0) contCuadrados++;
+                    else if (dif < 0) contFaltantes++;
+                    else if (dif > 0) contSobrantes++;
+                }
+
+                let cumpleEstado = true;
+                if (filtroEstadoGlobal === 'cuadrados' && dif !== 0) cumpleEstado = false;
+                if (filtroEstadoGlobal === 'faltantes' && dif >= 0) cumpleEstado = false;
+                if (filtroEstadoGlobal === 'sobrantes' && dif <= 0) cumpleEstado = false;
 
                 return cumpleEstado && cumpleUsuario && cumpleBusqueda;
             });
@@ -769,7 +785,7 @@
         .btn-danger { background: var(--danger); }
         .btn-success { background: var(--success); }
         .btn-purple { background: #6366f1; } 
-        .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; }
+        .search-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #eee; border-radius: 10px; font-family: 'Inter', sans-serif; outline: none; transition: border 0.3s; box-sizing: border-box; }
         .search-input:focus { border-color: var(--primary); }
         .btn-action-delete { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 5px 10px; transition: transform 0.1s; }
         .btn-action-delete:hover { transform: scale(1.2); }
@@ -885,6 +901,7 @@
             <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 20px; margin-top: 20px;">
             
             <h3>Alertas Fuera de Stock</h3>
+            <input type="text" id="busquedaIncidencias" class="search-input" placeholder="🔍 Filtrar alertas por código, ubicación u operador..." oninput="filtrarIncidenciasAdmin()" style="padding: 9px 12px; margin-bottom: 10px; font-size: 0.85rem;">
             <div class="scroll">
                 <table>
                     <thead><tr><th>Hora</th><th>Op.</th><th>Reporte</th><th style="text-align:center;">Acción</th></tr></thead>
