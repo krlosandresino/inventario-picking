@@ -53,7 +53,6 @@
         
         let auditoriaGlobal = {};
         let audioCtxGlobal = null;
-        let unsubscribeSesionActiva = null;
 
         // --- VARIABLES PARA RENDERIZADO PARCIAL (LAZY LOADING) ---
         let listaFiltradaOp = [];
@@ -196,26 +195,9 @@
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
                         
-                        // REGISTRAR USUARIO ACTIVO, ESCUCHAR CIERRE REMOTO Y CONFIGURAR DESCONEXIÓN USANDO dbAuth
+                        // REGISTRAR USUARIO ACTIVO Y CONFIGURAR DESCONEXIÓN USANDO dbAuth
                         const refActivo = ref(dbAuth, 'usuarios_activos/' + usuarioActual);
-                        set(refActivo, true).then(() => {
-                            if (unsubscribeSesionActiva) unsubscribeSesionActiva();
-                            unsubscribeSesionActiva = onValue(refActivo, (snapActivo) => {
-                                if (!snapActivo.exists() && usuarioActual !== "") {
-                                    if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
-                                    usuarioActual = "";
-                                    document.getElementById('userOp').value = "";
-                                    document.getElementById('pinOp').value = "";
-                                    document.getElementById('displayUsuario').innerText = "👤 Op: -";
-                                    document.getElementById('loginOverlayOp').style.display = 'flex';
-                                    if (wakeLock !== null) {
-                                        try { wakeLock.release().then(() => { wakeLock = null; }); } catch (err) {}
-                                    }
-                                    alert("Tu sesión ha sido cerrada por el administrador.");
-                                    document.getElementById('userOp').focus();
-                                }
-                            });
-                        });
+                        set(refActivo, true);
                         onDisconnect(refActivo).remove();
                         
                         iniciarMonitoreoBateria(usuarioActual);
@@ -235,15 +217,12 @@
 
         window.cerrarSesion = () => {
             if (confirm("¿Estás seguro de que deseas cerrar sesión?")) {
-                if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
-                const userSaliente = usuarioActual;
-                usuarioActual = "";
-
                 // ELIMINAR SESIÓN ACTIVA MANUALMENTE AL SALIR
-                if (userSaliente) {
-                    remove(ref(dbAuth, 'usuarios_activos/' + userSaliente));
+                if (usuarioActual) {
+                    remove(ref(dbAuth, 'usuarios_activos/' + usuarioActual));
                 }
                 
+                usuarioActual = "";
                 document.getElementById('userOp').value = "";
                 document.getElementById('pinOp').value = "";
                 document.getElementById('displayUsuario').innerText = "👤 Op: -";

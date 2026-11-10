@@ -43,7 +43,6 @@
         let itemSeleccionado = null;
         let permitirPendientesNoContados = false;
         let registrosParciales = JSON.parse(localStorage.getItem('reconteo_parciales_op') || '{}');
-        let unsubscribeSesionActiva = null;
         let enviandoReconteo = false;
         let audioCtxGlobal = null;
 
@@ -142,24 +141,9 @@
                         document.getElementById('loginOverlayOp').style.display = 'none';
                         solicitarWakeLock();
                         
-                        // REGISTRAR USUARIO ACTIVO, ESCUCHAR CIERRE REMOTO Y CONFIGURAR DESCONEXIÓN
+                        // REGISTRAR USUARIO ACTIVO Y CONFIGURAR DESCONEXIÓN
                         const refActivo = ref(db, 'usuarios_activos/' + usuarioActual);
-                        set(refActivo, true).then(() => {
-                            if (unsubscribeSesionActiva) unsubscribeSesionActiva();
-                            unsubscribeSesionActiva = onValue(refActivo, (snapActivo) => {
-                                if (!snapActivo.exists() && usuarioActual !== "") {
-                                    if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
-                                    cerrarModalReconteo();
-                                    usuarioActual = "";
-                                    document.getElementById('displayUsuario').innerText = "👤 Op: -";
-                                    document.getElementById('userOp').value = "";
-                                    document.getElementById('pinOp').value = "";
-                                    document.getElementById('loginOverlayOp').style.display = 'flex';
-                                    alert("Tu sesión ha sido cerrada por el administrador.");
-                                    document.getElementById('userOp').focus();
-                                }
-                            });
-                        });
+                        set(refActivo, true);
                         onDisconnect(refActivo).remove();
                         
                     } else {
@@ -178,14 +162,12 @@
 
         window.cerrarSesion = () => {
             if (confirm("¿Estás seguro de que deseas cerrar sesión?")) {
-                if (unsubscribeSesionActiva) { unsubscribeSesionActiva(); unsubscribeSesionActiva = null; }
-                const userSaliente = usuarioActual;
-                usuarioActual = "";
-
-                if (userSaliente) {
-                    remove(ref(db, 'usuarios_activos/' + userSaliente));
+                // ELIMINAR SESIÓN ACTIVA MANUALMENTE AL SALIR
+                if (usuarioActual) {
+                    remove(ref(db, 'usuarios_activos/' + usuarioActual));
                 }
                 
+                usuarioActual = "";
                 document.getElementById('displayUsuario').innerText = "👤 Op: -";
                 document.getElementById('userOp').value = "";
                 document.getElementById('pinOp').value = "";
