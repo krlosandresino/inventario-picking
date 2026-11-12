@@ -53,6 +53,7 @@
         
         let auditoriaGlobal = {};
         let audioCtxGlobal = null;
+        let debounceRefrescoLista = null;
 
         // --- VARIABLES PARA RENDERIZADO PARCIAL (LAZY LOADING) ---
         let listaFiltradaOp = [];
@@ -160,7 +161,7 @@
         window.onload = () => { 
             document.getElementById('userOp').focus(); 
             document.getElementById('listaMaestro').addEventListener('scroll', function() {
-                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 20) {
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 40) {
                     window.renderizarSiguientePaginaOp();
                 }
             });
@@ -284,27 +285,46 @@
         // --- EVENTOS ESPECÍFICOS: onChildAdded y onChildRemoved ---
         onChildAdded(dbRefRegistros, (snap) => {
             const reg = snap.val();
-            const cod = String(reg.cod);
+            if (!reg || reg.cod === undefined) return;
+            const cod = String(reg.cod).trim();
             const currentCount = mapRegistrosPorCodigo.get(cod) || 0;
             mapRegistrosPorCodigo.set(cod, currentCount + 1);
             
             if (currentCount === 0) {
                 codigosContadosGlobal.add(cod);
                 actualizarDashboard();
+
+                // Retirar de la lista filtrada en memoria para mantenerla sincronizada
+                const idxFiltrada = listaFiltradaOp.findIndex(item => String(item.cod).trim() === cod);
+                if (idxFiltrada !== -1) {
+                    listaFiltradaOp.splice(idxFiltrada, 1);
+                    if (idxFiltrada < itemsCargadosOp) {
+                        itemsCargadosOp = Math.max(0, itemsCargadosOp - 1);
+                    }
+                }
                 
                 const tarjeta = document.getElementById('card_' + cod);
                 if (tarjeta) {
                     tarjeta.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
                     tarjeta.style.opacity = '0';
                     tarjeta.style.transform = 'scale(0.95)';
-                    setTimeout(() => tarjeta.style.display = 'none', 200);
+                    setTimeout(() => {
+                        if (tarjeta.parentNode) tarjeta.remove();
+                        window.verificarRellenoListaOp();
+                    }, 200);
+                } else {
+                    clearTimeout(debounceRefrescoLista);
+                    debounceRefrescoLista = setTimeout(() => {
+                        window.verificarRellenoListaOp();
+                    }, 150);
                 }
             }
         });
 
         onChildRemoved(dbRefRegistros, (snap) => {
             const reg = snap.val();
-            const cod = String(reg.cod);
+            if (!reg || reg.cod === undefined) return;
+            const cod = String(reg.cod).trim();
             const currentCount = mapRegistrosPorCodigo.get(cod) || 0;
             
             if (currentCount > 1) {
@@ -317,11 +337,24 @@
             }
         });
 
+        // --- GARANTIZA QUE SIEMPRE SE CARGUEN LOS SIGUIENTES PENDIENTES SIN REFRESCAR ---
+        window.verificarRellenoListaOp = () => {
+            const contenedor = document.getElementById('listaMaestro');
+            if (!contenedor) return;
+
+            while (
+                itemsCargadosOp < listaFiltradaOp.length &&
+                (contenedor.children.length < itemsPorPaginaOp || contenedor.scrollHeight <= contenedor.clientHeight + 40)
+            ) {
+                window.renderizarSiguientePaginaOp();
+            }
+        };
+
         // --- FILTRADO EN MEMORIA, PRIORIDAD DE RECONTEO Y RENDERIZADO PARCIAL ---
         window.aplicarFiltroYRenderizar = () => {
-            const filtro = document.getElementById('buscadorCodigo').value;
+            const filtro = document.getElementById('buscadorCodigo').value.trim();
             listaFiltradaOp = inventarioMaestro.filter(item => {
-                const codStr = String(item.cod);
+                const codStr = String(item.cod).trim();
                 if (codigosContadosGlobal.has(codStr)) return false; 
                 if (filtro && !codStr.includes(filtro)) return false; 
                 return true;
@@ -337,6 +370,7 @@
             document.getElementById('listaMaestro').innerHTML = "";
             itemsCargadosOp = 0;
             window.renderizarSiguientePaginaOp();
+            setTimeout(() => window.verificarRellenoListaOp(), 50);
         };
 
         window.renderizarSiguientePaginaOp = () => {
@@ -345,33 +379,36 @@
             
             let html = "";
             chunk.forEach((item) => {
+                const codLimpio = String(item.cod).trim();
+                if (document.getElementById('card_' + codLimpio)) return;
+
                 const nombreOriginal = item.nom || '';
                 const nombreCorto = nombreOriginal.length > 25 ? nombreOriginal.substring(0, 25) + '...' : nombreOriginal;
                 const nomLimpio = nombreOriginal.replace(/['"]/g, ''); 
-                const isAuditoria = auditoriaGlobal[item.cod];
+                const isAuditoria = auditoriaGlobal[codLimpio];
                 
                 html += `
-                <div class="result-card rc-wrapper ${isAuditoria ? 'rc-auditoria' : ''}" id="card_${item.cod}" style="display: flex;">
+                <div class="result-card rc-wrapper ${isAuditoria ? 'rc-auditoria' : ''}" id="card_${codLimpio}" style="display: flex;">
                     <div class="rc-info-col">
                         <div class="rc-cod-row">
-                            <span class="rc-cod">${item.cod}</span>
+                            <span class="rc-cod">${codLimpio}</span>
                             <span class="rc-pos">${item.pos}</span>
                             <span class="badge-auditoria" style="display: ${isAuditoria ? 'inline-block' : 'none'}; background:var(--warning); color:#fff; padding:2px 5px; border-radius:4px; font-size:0.65rem; font-weight:bold; margin-left:4px; white-space: nowrap; flex-shrink: 0;">⚠️ RECONTEO</span>
                         </div>
                         <span class="nombre-movil" style="font-size:0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${nombreCorto}</span>
                     </div>
                     <div class="rc-actions">
-                        <input type="text" id="cant_${item.cod}" inputmode="numeric" placeholder="Cant." 
+                        <input type="text" id="cant_${codLimpio}" inputmode="numeric" placeholder="Cant." 
                             class="rc-input"
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')"
-                            onkeydown="if(event.key === 'Enter') registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${item.cod}', this.nextElementSibling)">
-                        <button onclick="registrarItemMaestro('${item.cod}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${item.cod}', this)" class="btn-main rc-btn">Registrar</button>
+                            onkeydown="if(event.key === 'Enter') registrarItemMaestro('${codLimpio}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${codLimpio}', this.nextElementSibling)">
+                        <button onclick="registrarItemMaestro('${codLimpio}', '${nomLimpio}', '${item.pos}', '${item.stock}', 'cant_${codLimpio}', this)" class="btn-main rc-btn">Registrar</button>
                     </div>
                 </div>`;
             });
             
             document.getElementById('listaMaestro').insertAdjacentHTML('beforeend', html);
-            itemsCargadosOp += itemsPorPaginaOp;
+            itemsCargadosOp += chunk.length;
         };
 
         window.registrarItemMaestro = (cod, nom, pos, teorico, inputId, btnEl) => {
@@ -388,7 +425,7 @@
             }
             
             push(dbRefRegistros, {
-                cod: cod,
+                cod: String(cod).trim(),
                 nom: nom,
                 pos: pos,
                 cant: cant, 
@@ -405,13 +442,6 @@
             inputEl.value = ""; 
 
             mostrarToast(`✅ Guardado: ${cod}`);
-
-            const tarjeta = document.getElementById('card_' + cod);
-            if (tarjeta) {
-                tarjeta.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-                tarjeta.style.opacity = '0';
-                tarjeta.style.transform = 'scale(0.95)';
-            }
         };
 
         let debounceTimerBusqueda;
@@ -419,7 +449,7 @@
             clearTimeout(debounceTimerBusqueda);
             debounceTimerBusqueda = setTimeout(() => {
                 window.aplicarFiltroYRenderizar();
-            }, 300); 
+            }, 250); 
         };
     </script>
     <style>
