@@ -178,11 +178,12 @@
 
             const agrupados = {};
             listaRaw.forEach(reg => {
-                if (!agrupados[reg.cod]) {
-                    agrupados[reg.cod] = { ...reg, cant: 0, usuarios: new Set() };
+                const codKey = String(reg.cod).trim();
+                if (!agrupados[codKey]) {
+                    agrupados[codKey] = { ...reg, cod: codKey, cant: 0, usuarios: new Set() };
                 }
-                agrupados[reg.cod].cant += parseFloat(reg.cant || 0);
-                agrupados[reg.cod].usuarios.add(reg.usuario);
+                agrupados[codKey].cant += parseFloat(reg.cant || 0);
+                agrupados[codKey].usuarios.add(reg.usuario);
             });
             
             listaAgrupadaGlobal = Object.values(agrupados).reverse();
@@ -202,6 +203,14 @@
                 elFill.style.width = `${porcentaje}%`;
                 elText.innerText = `${porcentaje}% (${gestionados} / ${totalItems} SKUs)`;
             }
+
+            // Si la ventana de Códigos Pendientes está abierta, actualizarla en tiempo real sin perder su ordenamiento
+            const modalPend = document.getElementById('modalPendientes');
+            if (modalPend && modalPend.style.display === 'flex') {
+                const codigosRegistrados = new Set(Object.keys(agrupados));
+                listaPendientesGlobal = dataMaestro.filter(m => !codigosRegistrados.has(String(m.cod).trim()));
+                renderListaPendientes();
+            }
             
             ejecutarFiltro();
         }
@@ -209,15 +218,16 @@
         window.eliminarRegistroIndividual = async (codigo) => {
             if(confirm(`¿Deseas eliminar los registros del código ${codigo} para que lo vuelvan a ingresar?`)) {
                 const updates = {};
+                const codTarget = String(codigo).trim();
                 for (const key in rawRegistrosGlobal) {
-                    if (String(rawRegistrosGlobal[key].cod) === String(codigo)) {
+                    if (String(rawRegistrosGlobal[key].cod).trim() === codTarget) {
                         updates[`registros/${key}`] = null;
                     }
                 }
                 if (Object.keys(updates).length > 0) {
                     await update(ref(db), updates);
                 }
-                alert(`Registros del código ${codigo} eliminados.`);
+                alert(`Registros del código ${codTarget} eliminados.`);
             }
         };
 
@@ -262,9 +272,10 @@
                 const agrupados = {};
                 
                 Object.values(registros).forEach(i => {
-                    if(!agrupados[i.cod]) agrupados[i.cod] = { ...i, cant: 0, listaUsuarios: new Set() };
-                    agrupados[i.cod].cant += parseFloat(i.cant || 0);
-                    agrupados[i.cod].listaUsuarios.add(i.usuario);
+                    const codKey = String(i.cod).trim();
+                    if(!agrupados[codKey]) agrupados[codKey] = { ...i, cod: codKey, cant: 0, listaUsuarios: new Set() };
+                    agrupados[codKey].cant += parseFloat(i.cant || 0);
+                    agrupados[codKey].listaUsuarios.add(i.usuario);
                 });
 
                 const codigosRegistrados = new Set(Object.keys(agrupados));
@@ -277,7 +288,7 @@
                 }));
 
                 dataMaestro.forEach(m => {
-                    if (!codigosRegistrados.has(String(m.cod))) {
+                    if (!codigosRegistrados.has(String(m.cod).trim())) {
                         rows.push({
                             Ubicacion: m.pos, Codigo: m.cod, Producto: m.nom, Stock: m.stock,
                             Encontrados: 0, Diferencia: 0 - (m.stock || 0),
@@ -325,9 +336,9 @@
                 const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                 
                 const nuevoMaestro = rawRows.map(f => ({ 
-                    cod: f["Variante"] !== undefined ? String(f["Variante"]) : '', 
-                    nom: f["nombre"] !== undefined ? String(f["nombre"]) : '', 
-                    pos: f["Caja"] !== undefined ? String(f["Caja"]) : '', 
+                    cod: f["Variante"] !== undefined ? String(f["Variante"]).trim() : '', 
+                    nom: f["nombre"] !== undefined ? String(f["nombre"]).trim() : '', 
+                    pos: f["Caja"] !== undefined ? String(f["Caja"]).trim() : '', 
                     stock: parseFloat(f["Physical Quantity"]) || 0 
                 })).filter(i => i.cod !== "");
 
@@ -544,11 +555,12 @@
             const stats = {};
 
             Object.values(rawRegistrosGlobal).forEach(reg => {
-                if (!agrupados[reg.cod]) {
-                    agrupados[reg.cod] = { teo: parseFloat(reg.teorico || 0), fis: 0, usuarios: new Set() };
+                const codKey = String(reg.cod).trim();
+                if (!agrupados[codKey]) {
+                    agrupados[codKey] = { teo: parseFloat(reg.teorico || 0), fis: 0, usuarios: new Set() };
                 }
-                agrupados[reg.cod].fis += parseFloat(reg.cant || 0);
-                if (reg.usuario) agrupados[reg.cod].usuarios.add(reg.usuario);
+                agrupados[codKey].fis += parseFloat(reg.cant || 0);
+                if (reg.usuario) agrupados[codKey].usuarios.add(reg.usuario);
             });
 
             Object.values(rawRegistrosGlobal).forEach(reg => {
@@ -592,9 +604,9 @@
 
         window.abrirModalPendientes = () => {
             const registros = Object.values(rawRegistrosGlobal);
-            const codigosRegistrados = new Set(registros.map(reg => String(reg.cod)));
+            const codigosRegistrados = new Set(registros.map(reg => String(reg.cod).trim()));
             
-            listaPendientesGlobal = dataMaestro.filter(m => !codigosRegistrados.has(String(m.cod)));
+            listaPendientesGlobal = dataMaestro.filter(m => !codigosRegistrados.has(String(m.cod).trim()));
             
             sortColumnaPendientes = null;
             sortDireccionPendientes = 1;
